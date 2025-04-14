@@ -28,7 +28,7 @@ public:
     void rgb_to_yuv420(unsigned char* rgb, unsigned char* yuv, int width, int height);
     void montage_jpeg();
 
-    
+    void Create_Path();
 private:
     bool is_image_file(const std::string& filename);
     int allocPicMem(paramStruct_t*pops, int size);

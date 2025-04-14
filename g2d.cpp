@@ -1,15 +1,20 @@
 
 #include "g2d.h"
-
-
-
-
-
 #define TJE_IMPLEMENTATION
 #include "./tiny_jpeg.h"
 using namespace g2dapi;
 
 G2d::G2d()
+{
+    Create_Path();
+}
+
+G2d::~G2d()
+{
+}
+
+
+void G2d::Create_Path()
 {
     pcompPicPath0=Config::GetTime_Path();
     pcompPicPath0+=Config::Config::Get("Path","Montage");
@@ -17,10 +22,6 @@ G2d::G2d()
     if (created) {
         std::cout << "Directory created: " <<pcompPicPath0<< std::endl;
     }
-}
-
-G2d::~G2d()
-{
 }
 
 int G2d::decode_jpeg(const char *filename, paramStruct_t *pops)
@@ -310,3 +311,5 @@ void G2d::montage_jpeg()
         freePicMem(&m_DispMemOpsArray[i]);
     }
 }
+
+

@@ -45,8 +45,6 @@ struct ntp_packet {
 
 class ListeningSocket{
 public:
-
-  
     ListeningSocket();
     ~ListeningSocket();
 

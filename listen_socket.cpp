@@ -10,7 +10,7 @@
 #include <cmath>
 ListeningSocket::ListeningSocket()
 {
-   //check_time();
+    check_time();
     // std::thread jt(&ListeningSocket::jt808_init, this);
     // jt.detach();
 }
@@ -155,6 +155,7 @@ void ListeningSocket::check_time()
             if (settimeofday(&tv, NULL) != 0) {
                 throw std::runtime_error("settimeofday failed (需要root权限)");
             }
+            g2d.Create_Path();
             std::cout << "系统时间已更新\n";
         }
     } catch (const std::exception& e) {
