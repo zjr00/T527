@@ -1,4 +1,5 @@
 #include "ftp_task.h"
+#include "config.h"
 #include <sys/stat.h>
 #include <string>
 #include <sstream>
@@ -8,21 +9,130 @@ using namespace  std;
 
 int FtpTask::ftp_upload_work_count =0;
 int FtpTask::ftp_download_work_count =0;
-std::mutex FtpTask::mutex;
-char *FtpTask::media_path = "/media/t31";
 
+FtpTask::FtpTask()
+{
+	// down_thread =thread(&FtpTask::download_thread,this);
+	// up_thread =thread(&FtpTask::upload_thread,this);
+	// down_thread.detach();
+	// up_thread.detach();
+}
+
+FtpTask::~FtpTask()
+{
+	
+}
+
+void FtpTask::add_ftp_upload_count()
+{
+	pthread_mutex_lock(&mx_ftp_work_count);
+    ftp_upload_work_count+=1;
+    pthread_mutex_unlock(&mx_ftp_work_count);
+}
+
+void FtpTask::del_ftp_upload_count()
+{
+	pthread_mutex_lock(&mx_ftp_work_count);
+	if(ftp_upload_work_count > 0)
+    	ftp_upload_work_count-=1;
+    pthread_mutex_unlock(&mx_ftp_work_count);
+}
+
+
+void FtpTask::add_ftp_download_count()
+{
+    pthread_mutex_lock(&mx_ftp_work_count);
+    ftp_download_work_count+=1;
+    pthread_mutex_unlock(&mx_ftp_work_count);
+}
+
+void FtpTask::del_ftp_download_count()
+{
+    pthread_mutex_lock(&mx_ftp_work_count);
+    if(ftp_download_work_count > 0)
+		ftp_download_work_count-=1;
+    pthread_mutex_unlock(&mx_ftp_work_count);
+}
+
+
+
+
+
+void FtpTask::download_thread()
+{
+	//downloadFile("jsft.txt","jsft.txt");
+}
+
+
+void FtpTask::upload_thread()
+{
+	//media_path = Config::GetTime_Path();
+	media_path = "./data";
+	traverse_directory(media_path);
+	//uploadFile("config.ini","config.ini");
+}
+
+void FtpTask::traverse_directory(const string& path)
+{
+	DIR *dir;
+	struct dirent *entry;
+	string ext;
+	struct stat s;
+	
+	if ((dir = opendir(path.c_str())) == NULL) 
+	{
+		perror("opendir");
+		dir = NULL;
+		return ;
+	}
+
+	// 遍历目录条目
+	while ((entry = readdir(dir)) != NULL) {
+		
+		string local_file = path + "/" + entry->d_name;
+		if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) 
+		{
+			continue;
+		}
+
+		if (lstat(local_file.c_str(), &s) == 0 && S_ISDIR(s.st_mode)) 
+        {
+            // 递归遍历子目录
+            traverse_directory(local_file);
+        }
+		else
+		{
+			ext = strrchr(entry->d_name, '.'); // 从右向左查找最后一个`.`字符
+			if (!ext.empty() && (ext==".h264" || ext==".h265" || ext==".jpeg" || ext==".jpg" )) 
+			{
+				
+				cout<<"需要上传的文件名："<<local_file<<endl;
+			}
+		}
+		
+	}
+
+	closedir(dir);
+    return ;
+}
+
+void FtpTask::Get_FTPconfig()
+{
+	ftp_ip = Config::Get("FTP","FTP_IP");
+    ftp_user = Config::Get("FTP","FTP_user");
+    ftp_pass = Config::Get("FTP","FTP_pass");
+    local_path = Config::Get("FTP","Local_path");
+    remot_path = Config::Get("FTP","Remot_path");
+    ftp_port = stoi(Config::Get("FTP","FTP_port").c_str());
+}
 
 /*****************************************************************************
 //	描述：		下载
 //	输入参数：
-//ip	需要下载的ip地址
-//port	端口
-//user	下载地址的用户名
-//password	下载地址的用户名密码
 //localFile	下载的文件路径
 //remoteFile 下载的文件
 *****************************************************************************/
-bool FtpTask::downloadFile(std::string ip, int port, std::string user, std::string password, const std::string &remoteFile, const std::string &localFile)
+bool FtpTask::downloadFile(const string &remoteFile, const string &localFile)
 {
     FILE *fp;
     struct stat file_stat;
@@ -32,20 +142,21 @@ bool FtpTask::downloadFile(std::string ip, int port, std::string user, std::stri
 	double upload_speed;
     string command;
     char buffer[1024];
+	local_path +=localFile;
+	remot_path +=remoteFile;
 
-
-	mutex.lock();
-	ftp_download_work_count+=1;
+	add_ftp_download_count();
 	printf("ftp download work count %d\r\n",ftp_download_work_count);
-	mutex.unlock();
 
 
-     start_time = clock();
+    start_time = clock();
 
     ostringstream commandStream;
-    commandStream << "ftpget " << ip << " -P " << port << " -u " << user
-                  << " -p " << password << " " << localFile << " " << remoteFile << " 2>&1";
-    command =commandStream.str();
+	commandStream << "ftpget " << ftp_ip << " -P " << ftp_port << " -u " << ftp_user
+				<< " -p " << ftp_pass << " " << local_path << " " << remot_path << " 2>&1";
+	command =commandStream.str();
+	
+   
 	cout <<"ftp命令: "<< command <<endl;
 
     fp = popen(command.c_str(), "r");
@@ -88,17 +199,13 @@ bool FtpTask::downloadFile(std::string ip, int port, std::string user, std::stri
 
 	pclose(fp);
 
-	mutex.lock();
-	ftp_download_work_count-=1;
+	del_ftp_download_count();
 	printf("ftp download work count %d\r\n",ftp_download_work_count);
-	mutex.unlock();
 	return 0;
 
 ERR_EXIT:
-	mutex.lock();
-	ftp_download_work_count-=1;
+	del_ftp_download_count();
 	printf("ftp download work count %d\r\n",ftp_download_work_count);
-	mutex.unlock();
 	return -1;
 }
 
@@ -108,14 +215,10 @@ ERR_EXIT:
 /*****************************************************************************
 //	描述：		上传
 //	输入参数：
-//ip	需要上传的ip地址
-//port	端口
-//user	上传地址的用户名
-//password	上传地址的用户名密码
 //localFile	上传的路径
 //remoteFile	需要上传的文件
 *****************************************************************************/
-bool FtpTask::uploadFile(std::string ip, int port, std::string user, std::string password, const std::string &localFile, const std::string &remoteFile)
+bool FtpTask::uploadFile( const string &localFile, const string &remoteFile)
 {
     FILE *fp;
     struct stat file_stat;
@@ -125,18 +228,20 @@ bool FtpTask::uploadFile(std::string ip, int port, std::string user, std::string
 	double upload_speed;
     //char command[300] = {0};
     string command;
-    mutex.lock();
-	ftp_upload_work_count+=1;
-	printf("ftp upload work count %d\r\n",ftp_upload_work_count);
-	mutex.unlock();
 
+    add_ftp_upload_count();
+
+	printf("ftp upload work count %d\r\n",ftp_upload_work_count);
+	local_path +=localFile;
+	remot_path +=remoteFile;
    
     start_time = clock();
 
-    ostringstream commandStream;
-    commandStream << "ftpput " << ip << " -P " << port << " -u " << user
-                  << " -p " << password << " " << remoteFile << " " << localFile << " 2>&1";
-    command =commandStream.str();
+	ostringstream commandStream;
+	commandStream << "ftpget " << ftp_ip << " -P " << ftp_port << " -u " << ftp_user
+				<< " -p " << ftp_pass << " " << local_path << " " << remot_path << " 2>&1";
+	command =commandStream.str();
+    
 	cout <<"ftp命令: "<< command <<endl;
 
 
@@ -155,10 +260,7 @@ bool FtpTask::uploadFile(std::string ip, int port, std::string user, std::string
 	if (stat(localFile.c_str(), &file_stat) == -1)
 	{
 	   	printf("Failed to get file size \r\n");
-		mutex.lock();
-		ftp_upload_work_count-=1;
-		printf("ftp upload work count %d\r\n",ftp_upload_work_count);
-		mutex.unlock();
+		del_ftp_upload_count();
 	   	return -1;
 	}
 	file_size = file_stat.st_size/1024;
@@ -176,31 +278,28 @@ bool FtpTask::uploadFile(std::string ip, int port, std::string user, std::string
 
 	pclose(fp);
 
-    if(strncmp(localFile.c_str(), "./", 2) == 0)
-	{
-		if((strcmp(FtpTask::media_path, "/media/t31")==0))
-		{
-			char tmp_file[256];
-			char * tmp_file_name = (char *)localFile.c_str()+2;
-			sprintf(tmp_file, "%s/%s" , media_path, tmp_file_name);
-			if(access(tmp_file, F_OK) == 0)
-			{
-				remove(tmp_file);
-				system("sync");
-			}
-		}
-	}
+    // if(strncmp(localFile.c_str(), "./", 2) == 0)
+	// {
+	// 	if((strcmp(FtpTask::media_path, "/media/t31")==0))
+	// 	{
+	// 		char tmp_file[256];
+	// 		char * tmp_file_name = (char *)localFile.c_str()+2;
+	// 		sprintf(tmp_file, "%s/%s" , media_path, tmp_file_name);
+	// 		if(access(tmp_file, F_OK) == 0)
+	// 		{
+	// 			remove(tmp_file);
+	// 			system("sync");
+	// 		}
+	// 	}
+	// }
 
-    // 删除本地文件
-    if (remove(localFile.c_str()) == 0) {
-        printf("file delete success\r\n");
-    } else {
-        printf("file delete failed\r\n");
-    }
-
-   	mutex.lock();
-	ftp_upload_work_count-=1;
+    // // 删除本地文件
+    // if (remove(localFile.c_str()) == 0) {
+    //     printf("file delete success\r\n");
+    // } else {
+    //     printf("file delete failed\r\n");
+    // }
+	del_ftp_upload_count();
 	printf("ftp upload work count %d\r\n",ftp_upload_work_count);
-	mutex.unlock();
 	return 0;
 }

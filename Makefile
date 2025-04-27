@@ -19,7 +19,6 @@ CPPOBJS := $(patsubst %.cpp, %.o, $(CPP_SRC))
    STRIP = strip
 
 LDFLAGS += -L ./osip/lib \
-	-L $(THIRD_PARTY_PATH)/../lib \
 	-L /home/zhang/WbRTC/code/src/build/linux/debian_sid_amd64-sysroot/lib/x86_64-linux-gnu \
 	-L $(THIRD_PARTY_PATH)/../lib/third_party/boringssl \
 	-L /home/zhang/WbRTC/code/src/out/Release_nogtk/obj/modules/desktop_capture\
@@ -48,7 +47,6 @@ DEFINES += -DHAVE_PTHREADS -DHAVE_SYS_UIO_H -DANDROID_SMP=1 -D__ARM_HAVE_DMB -D_
    
 LDFLAGS +=  -L ./g2d/lib \
 	-L ./osip/lib_none \
-	-L $(THIRD_PARTY_PATH)/../none_lib \
 	-L /home/zhang/WbRTC/code/src/build/linux/debian_sid_amd64-sysroot/lib/x86_64-linux-gnu \
 	-L $(THIRD_PARTY_PATH)/../none_lib/third_party/boringssl \
 	-L /home/zhang/WbRTC/code/src/out/none/obj/modules/desktop_capture\

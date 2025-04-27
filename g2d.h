@@ -8,16 +8,16 @@
 #include <filesystem>
 
 #include "config.h"
-
 #include "sunxiMemInterface.h"
 #include "G2dApi.h"
 
 #include "jpeglib.h"
 
 #define LOG_TAG "g2d_test"
+
 #include "sdklog.h"
 #include <libyuv.h>
-
+#include "ftp_task.h"
 class G2d
 {
 
@@ -63,6 +63,7 @@ private:
     std::vector<std::string> image_paths;
     string pcompPicPath0;
     struct timeval t1, t2;
+    FtpTask ftp;
 };
 
 

@@ -12,13 +12,15 @@
 #include <algorithm>
 //#include "jt808.h"
 #include "gate.h"
-#include "g2d.h"
+//#include "g2d.h"
 #include "config.h"
 #include "base_json.h"
 
 #include <sys/socket.h>
 #include <sys/time.h>
-
+#include "RfidCar.h"
+#include "Weight.h"
+#include "Public.h"
 struct PacketHeader {
     int type;          // 数据类型（1字节）
     uint32_t data_size;     // 数据部分大小（4字节）
@@ -65,6 +67,7 @@ protected:
     void jt808_init();
     int Recv_handler(int socked);//接收数据
     void send_text(int sock, const std::string& text);
+    void Xstdata();
     //void Send_handler();//发送数据
     bool receive_full(int sock, char* buffer, size_t expected_size);
     time_t get_ntp_time(const char* host);
@@ -74,9 +77,8 @@ protected:
     char recvBuff[1024];
     //Jt808 jt808;
     gate Gate;
-    G2d g2d;
+    //G2d g2d;
     base_json bj;
-  
     std::mutex sockets_mutex;
 
     const char* NTP_SERVERS[24] = {
@@ -109,6 +111,9 @@ protected:
     const int NTP_PORT = 123;
     const long NTP_OFFSET = 2208988800UL; // 1900-01-01到1970-01-01的秒数差
 
+    RfidCar rfid;
+    Weight weight;
+    
 };
 
 #endif

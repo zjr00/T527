@@ -20,7 +20,7 @@
 #include <dirent.h>
 #include <thread>
 #include <vector>
-
+#include <unistd.h>
 #include "./osip/include/eXosip2/eXosip.h"
 #include "./osip/include/eXosip2/eX_call.h"
 #include "./osip/include/eXosip2/eX_setup.h"

@@ -8,11 +8,14 @@
 #include <ctime>
 #include <sys/types.h>
 #include <cmath>
+
 ListeningSocket::ListeningSocket()
 {
     check_time();
     // std::thread jt(&ListeningSocket::jt808_init, this);
     // jt.detach();
+    // std::thread xstdata(&ListeningSocket::Xstdata, this);
+    // xstdata.detach();
 }
 ListeningSocket::~ListeningSocket()
 {
@@ -146,7 +149,7 @@ void ListeningSocket::check_time()
         std::cout << "本地时间: " << ctime(&local_time);
         std::cout << "时间差: " << difftime(ntp_time, local_time) << " 秒\n";
 
-        if(difftime(ntp_time, local_time) != 0)
+        if(ntp_time > local_time)
         {
             // 设置系统时间
             struct timeval tv;
@@ -155,7 +158,7 @@ void ListeningSocket::check_time()
             if (settimeofday(&tv, NULL) != 0) {
                 throw std::runtime_error("settimeofday failed (需要root权限)");
             }
-            g2d.Create_Path();
+            //g2d.Create_Path();
             std::cout << "系统时间已更新\n";
         }
     } catch (const std::exception& e) {
@@ -172,7 +175,7 @@ bool  ListeningSocket::receive_full(int sock, char* buffer, size_t expected_size
                                buffer + total_received, 
                                expected_size - total_received, 
                                0);
-        if (received <= 0) 
+        if (received <= 0)
         {
             std::lock_guard<std::mutex> lock(sockets_mutex);
             auto it = std::find(sockets.begin(), sockets.end(), sock);
@@ -217,7 +220,9 @@ int  ListeningSocket::Recv_handler(int socked)
             }
             case 1: {
                 std::string filename = Config::Get("Path","Tmp");
+                filename+= "/";
                 filename += Config::client_map[socked].direction_swith;
+                filename+= "_";
                 filename += header.image_name;
                 std::ofstream image_file(filename, std::ios::binary);
                 if (image_file.write(data.data(), data.size())) {
@@ -225,7 +230,7 @@ int  ListeningSocket::Recv_handler(int socked)
                 } else {
                     std::cerr << "图片保存失败: " << filename  << "，错误: " << strerror(errno) << std::endl;
                 }
-                g2d.montage_jpeg();
+                //g2d.montage_jpeg();
                 break;
             }
              case 2: {
@@ -234,6 +239,14 @@ int  ListeningSocket::Recv_handler(int socked)
             }
             case 3: {
                 Gate.processExit();
+                break;
+            }
+            case 4: {
+                //FtpTask::downloadFile("129.211.172.129",0,"ftpuser","123456","./jsft.txt","./jsft.txt");
+                break;
+            }
+            case 5: {
+                //FtpTask::uploadFile("129.211.172.128",0,"ftpuser","123456","./","config.ini");
                 break;
             }
             default:
@@ -252,6 +265,11 @@ void ListeningSocket::send_text(int sock, const std::string &text)
     send(sock, (char*)&header, sizeof(header), 0);
     // 发送数据
     send(sock, text.data(), text.size(), 0);
+}
+
+void ListeningSocket::Xstdata()
+{
+    //Public::Init();
 }
 
 void ListeningSocket::SetConfig(string config,int sock)

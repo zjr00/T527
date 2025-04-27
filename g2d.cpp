@@ -17,7 +17,7 @@ G2d::~G2d()
 void G2d::Create_Path()
 {
     pcompPicPath0=Config::GetTime_Path();
-    pcompPicPath0+=Config::Config::Get("Path","Montage");
+    pcompPicPath0+=Config::Get("Path","Montage");
     bool created = std::filesystem::create_directories(pcompPicPath0);
     if (created) {
         std::cout << "Directory created: " <<pcompPicPath0<< std::endl;
@@ -219,7 +219,13 @@ void G2d::montage_jpeg()
     //     return ;
     // }
     int image_size = image_paths.size();
-    printf("文件夹中图片的数量:%d\n",image_size);
+    if (image_size != 9)
+    {
+       printf("文件夹中图片的数量:%d\n",image_size);
+       return ;
+    }
+    
+    
 
     for (int  i = 0; i < image_size; i++)
     {

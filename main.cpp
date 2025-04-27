@@ -17,7 +17,7 @@
 #include "listen_socket.h"
 #include "SipClient.h"
 #include <vector>
-
+#include "Public.h"
 
 class CustomSocketServer : public rtc::PhysicalSocketServer {
  public:
@@ -66,7 +66,7 @@ int main() {
     SipClient sipClient;
     
     sipClient.gb28181_client_start();
-
+    Public::Init();
     // P2P p2p("192.168.30.193",11111);
     // CustomSocketServer socket_server(&p2p);
     // rtc::AutoSocketServerThread thread(&socket_server);

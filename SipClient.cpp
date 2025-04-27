@@ -79,7 +79,7 @@ int SipClient::gb28181_client_start(void)
 	strcpy(config.g_devinfo.ipc_pwd,"admin123");
 
 	strcpy(config.g_devinfo.ipc_ip,Config::Get("GB28181","Local_ip").c_str());//
-
+    
     config.g_devinfo.server_port = 5060;
     config.g_devinfo.ipc_port = 5060;
 
@@ -121,7 +121,6 @@ void *SipClient::gb28181_client_func(void *arg)
 
     config.gclntsta.quit = false;
     config.gclntsta.mRegistered = false;
-
     if(init_sip_client() != 0)
     {
         goto exit;
