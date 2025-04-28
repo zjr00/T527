@@ -8,6 +8,8 @@ public:
     Weight();
     ~Weight();
 private:
+
+    void initialize();
     void CommMscomm();
     void GetCurWeight();
     void OnTime();
