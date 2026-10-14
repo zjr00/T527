@@ -7,14 +7,18 @@ class Weight
 public:
     Weight();
     ~Weight();
-private:
+// private:
 
-    void initialize();
-    void CommMscomm();
-    void GetCurWeight();
-    void OnTime();
+//     bool check_gpio_exists();
+//     bool initialize();
+//     void write_gpio_value(int value);
+//     void CommMscomm();
+//     void GetCurWeight();
+//     void OnTime();
 
-    int m_fd = -1;
+//     std::string dir_path;
+//     std::string val_path;
+//     int m_fd = -1;
 };
 
 

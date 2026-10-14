@@ -4,10 +4,12 @@
 #include <stdio.h>
 
 #include <string.h>
+
+/*功能：电子车牌---》没用*/
 RfidCar::RfidCar()
 {
-    thread rfidThread(&RfidCar::ReadRfidCarNumProc, this);
-    rfidThread.detach();
+    // thread rfidThread(&RfidCar::ReadRfidCarNumProc, this);
+    // rfidThread.detach();
 }
 
 RfidCar::~RfidCar()
@@ -39,9 +41,9 @@ void RfidCar::Rfid_Connect()
 
     int m_Port = stoi(Config::Get("ECarNum","Port").c_str());
 	int m_HostPort = stoi(Config::Get("ECarNum","HostPort").c_str());
-
-    cout<<"m_strIPAddress:"<<m_strIPAddress<<" m_strHostIPAddress"<<m_strHostIPAddress<<" m_Port"<<m_Port<<" m_HostPort"<<m_HostPort<<endl;
-    ifConnectReader =1;
+    
+    //cout<<"m_strIPAddress: "<<m_strIPAddress<<" m_strHostIPAddress "<<m_strHostIPAddress<<" m_Port "<<m_Port<<" m_HostPort "<<m_HostPort<<endl;
+    //ifConnectReader =1;
 
 }
 

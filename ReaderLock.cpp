@@ -21,7 +21,10 @@ ReaderLock::ReaderLock()
     pthread_cond_init(&cond, nullptr);
    
     m_nHaveReq = false;
-    
+
+    IP = Config::Get("Reader","ReaderIP");
+    //IP = "192.168.30.198";
+    Port = atoi(Config::Get("Reader","ReaderPort").c_str());
 }
 
 ReaderLock::~ReaderLock()
@@ -62,6 +65,7 @@ void ReaderLock::TCPRecvThread()
                     
                     memcpy(onePack, m_recvData, m_RecvLen);
                     cmdType = *(onePack + 19);
+                    strcpy(m_retInfo,"0x01");
                     if (cmdType == 0x00)
                     {
                         printf("找不到目标终端\n");
@@ -123,35 +127,43 @@ void ReaderLock::NetRecvOnePack(unsigned char *onePack, int packLen)
     if (!m_nHaveReq)
 		return;
 
-    Config::Show(onePack,"接收到的数据");
+    Config::Show(onePack,"接收到的数据",packLen);
     Aes_ECB *aes_Ecb = new Aes_ECB();
     unsigned char lockData[128] = {0};//存储需要解密的数据
-    int lockLen = *(onePack + 18); // 加密的数据长度
+    int lockLen = *(onePack + 23); // 加密的数据长度
     unsigned char data[128] = {0};//存储解密后的数据
     unsigned char UnEscape[128] = {0};//存储还原转义的数据
 
-    hdd_protocol->UnEscapeData(onePack,UnEscape,packLen);
+    hdd_protocol.UnEscapeData(onePack,UnEscape,packLen);
     //需要而外填充加密数据的长度
     int paddingNeeded =16 -lockLen%16;
+    //printf("lockLen = %d,paddingNeeded=%d\n",lockLen,paddingNeeded);
     memcpy(lockData, UnEscape + 32, lockLen+paddingNeeded); // 拷贝锁的加密数据
-
-   
+    
+    Config::Show(lockData,"需要解密的数据",lockLen+paddingNeeded);
     unsigned char cmdType;
-    aes_Ecb->aesDecrypt((uint8_t *)"1234567890123456", lockData, data);//解密数据
+    aes_Ecb->aesDecrypt((uint8_t *)aes_Ecb->Aes_pass.c_str(), lockData, data);//解密数据
 
-    Config::Show(data,"解密后的原始数据");
-
+    //Config::Show(data,"解密后的原始数据");
+    printf("解密后的原始数据\n");
+    for (int i = 0; i < lockLen; i++) {
+        printf("%02X ", data[i]);
+        if ((i + 1) % 16 == 0) {  // 每行打印16个字节
+            printf("\n");
+        }
+    }
+    cout<<"-------------------------"<<endl;
     cmdType = *(data + 10);
     switch (cmdType)
     {
     case 0x00:
-        strcpy(m_retInfo,"成功");
+        strcpy(m_retInfo,"0x00");
         break;
     case 0x01:
-        strcpy(m_retInfo,"失败");
+        strcpy(m_retInfo,"0x01");
         break;
     case 0x02:
-        strcpy(m_retInfo,"锁杆断开施封失败");
+        strcpy(m_retInfo,"0x01");
         break;
     default:
         break;
@@ -163,14 +175,8 @@ void ReaderLock::NetRecvOnePack(unsigned char *onePack, int packLen)
 
 
 // 连接阅读器网口
-int ReaderLock::TCPConnect(const char *IP, int Port)
+int ReaderLock::TCPConnect()
 {
-    
-    if (IP == NULL || Port >=65535)
-    {
-       return -1;
-    }
-
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == -1)
     {
@@ -182,11 +188,11 @@ int ReaderLock::TCPConnect(const char *IP, int Port)
     // 2、连接服务器
     struct sockaddr_in saServer;
     saServer.sin_family = AF_INET;
-    saServer.sin_addr.s_addr = inet_addr(IP);
+    saServer.sin_addr.s_addr = inet_addr(IP.c_str());
     saServer.sin_port = htons(Port);
     if (connect(server_fd, (struct sockaddr *)&saServer, sizeof(saServer)) < 0)
     {
-        printf("connet %s err\n", IP);
+        printf("connet ReaderLock  err\n");
         close_sock();
         return 0;
     }
@@ -206,6 +212,7 @@ void ReaderLock::close_sock()
         close(server_fd);
         server_fd = -1;
     }
+
 }
 
 void ReaderLock::TCPSend(const char *data, int len)
@@ -218,16 +225,20 @@ void ReaderLock::TCPSend(const char *data, int len)
 }
 
 // 施封
-bool ReaderLock::NetSealLock()
+char* ReaderLock::NetSealLock(const char * lockNum)
 {
     memset(m_retInfo, 0, sizeof(m_retInfo));
     unsigned char cmd[MAX_CMDBUFF_LEN] = {0};
     unsigned char aesData[64] = {0};
+    int len =hdd_protocol.getSealLock(cmd, lockNum);                           
+    //hdd_protocol.getSealLock(cmd, "487066731950");
+    //hdd_protocol.getSealLock(cmd, "487066828913");
+    Config::Show(cmd,"NetSealLock",len);
 
-    hdd_protocol->getSealLock(cmd, "280075725423");
-    Config::Show(cmd,"需要发送的数据");
-
-    send(server_fd, cmd, Config::GetCmdLen(cmd, sizeof(cmd)), 0);
+    if(!send(server_fd, cmd, Config::GetCmdLen(cmd, sizeof(cmd)), 0))
+    {
+        LOGE("发送给阅读器数据失败\n");
+    }
 
     m_nHaveReq = true;
     if (wait_for_response(7000)) {
@@ -239,46 +250,81 @@ bool ReaderLock::NetSealLock()
     m_RecvLen = 0;   
     m_nHaveReq = false;
     m_bResult=false;
-    return true;
+    return m_retInfo;
 }
 
 // 解封
-bool ReaderLock::NetUnsealLock()
+char* ReaderLock::NetUnSealLock(const char * lockNum)
 {
     unsigned char cmd[MAX_CMDBUFF_LEN] = {0};
-    hdd_protocol->getUnSealLock(cmd, "280075725423");
+    int len =hdd_protocol.getUnSealLock(cmd, lockNum);
+    //hdd_protocol.getUnSealLock(cmd, "487066731950");
+    //hdd_protocol.getUnSealLock(cmd, "487066828913");
 
-    Config::Show(cmd,"需要发送的数据");
+    Config::Show(cmd,"NetUnSealLock",len);
 
     send(server_fd, cmd, Config::GetCmdLen(cmd, sizeof(cmd)), 0);
 
     m_nHaveReq = true;
     if (wait_for_response(7000)) {
        
-        printf("解封结果: %s\n",m_retInfo);
+        LOGI("解封结果: %s\n",m_retInfo);
     } else {
-        printf("Timeout! No data received.\n");
+        LOGE("Timeout! No data received.\n");
     }
     m_RecvLen = 0;   
     m_nHaveReq = false;
     m_bResult=false;
-    return true;
+    return m_retInfo;
 }
 
-// 写业务数据
-bool ReaderLock::NetWriteLock()
+//L -666 施封
+char *ReaderLock::NetL666_SealLock(const char *lockNum)
 {
-    unsigned char cmd[MAX_CMDBUFF_LEN] = {0};
-    hdd_protocol->getSealLock(cmd, "CNHD0000008528");
-    return true;
+    unsigned char cmd[MAX_CMDBUFF_LEN];
+    memset(cmd, 0, MAX_CMDBUFF_LEN);
+    int len = hdd_protocol.L666_getSealLock(cmd, lockNum);
+    //hdd_protocol.getUnSealLock(cmd, "487066731950");
+    //hdd_protocol.getUnSealLock(cmd, "487066828913");
+
+    Config::Show(cmd,"NetL666_SealLock",len);
+
+    send(server_fd, cmd, Config::GetCmdLen(cmd, sizeof(cmd)), 0);
+
+    m_nHaveReq = true;
+    if (wait_for_response(7000)) {
+       
+        LOGI("施封封结果: %s\n",m_retInfo);
+    } else {
+        LOGE("Timeout! No data received.\n");
+    }
+    m_RecvLen = 0;   
+    m_nHaveReq = false;
+    m_bResult=false;
+    return m_retInfo;
 }
 
-// 读业务数据
-bool ReaderLock::NetReadLock()
+// L -666解封
+char *ReaderLock::NetL666_UnSealLock(const char *lockNum)
 {
     unsigned char cmd[MAX_CMDBUFF_LEN] = {0};
-    hdd_protocol->getSealLock(cmd, "CNHD0000008528");
-    return true;
+    int len = hdd_protocol.L666_getUnSealLock(cmd, lockNum);
+
+    Config::Show(cmd,"NetL666_UnSealLock",len);
+
+    send(server_fd, cmd, Config::GetCmdLen(cmd, sizeof(cmd)), 0);
+
+    m_nHaveReq = true;
+    if (wait_for_response(7000)) {
+       
+        LOGI("解封结果: %s\n",m_retInfo);
+    } else {
+        LOGE("Timeout! No data received.\n");
+    }
+    m_RecvLen = 0;   
+    m_nHaveReq = false;
+    m_bResult=false;
+    return m_retInfo;
 }
 
 bool ReaderLock::wait_for_response(int timeout_ms)

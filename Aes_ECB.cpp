@@ -8,8 +8,12 @@
 #include <ctime>
 #include "config.h"
 
+
+/*功能：AES加解密*/
+
 Aes_ECB::Aes_ECB()
 {
+    Aes_pass = Config::Get("Reader","RadarASE");
 }
 
 Aes_ECB::~Aes_ECB()
@@ -85,8 +89,9 @@ int Aes_ECB::Str2Hex(char *strSrc, unsigned char *hexData)
 {
    int t, t1;
 	int rlen = 0, len = strlen(strSrc);
+    int maxConvert = len / 2;
 	//data.SetSize(len/2);
-	for(int i = 0;i < len;)
+	for(int i = 0;i < len&& rlen < maxConvert;)
 	{
 		char l, h = strSrc[i];
 		if( h == ' ')
@@ -298,14 +303,15 @@ int Aes_ECB::invMixColumns(uint8_t (*state)[4])
 //key	初始密钥
 //ct	保存加密后的报文
 *****************************************************************************/
-int Aes_ECB::aesEncrypt(const uint8_t *input, uint8_t *key, uint8_t *ct)
+int Aes_ECB::aesEncrypt(const uint8_t *input, uint32_t inputLen,uint8_t *key, uint8_t *ct)
 {
-    if (NULL == key || NULL == input)
+    if (NULL == key || NULL == input||NULL == ct)
 	{
-        printf("Aes_ECB NULL input || key\n");
+        printf("Aes_ECB NULL input || key|| ct\n");
         return -1;
     }
 
+    printf("加密密钥：%s\n",Aes_pass.c_str());
     AesKey aesKey;
     uint8_t *pos = ct;
     const uint32_t *rk = aesKey.eK;  //加密密钥指针
@@ -316,8 +322,10 @@ int Aes_ECB::aesEncrypt(const uint8_t *input, uint8_t *key, uint8_t *ct)
     memcpy(actualKey, key, 16);
     keyExpansion(actualKey, 16, &aesKey);  // 密钥扩展
 
+
+    uint32_t blockCount = inputLen / BLOCKSIZE;
 	// 使用ECB模式循环加密多个分组长度的数据
-    for (int i = 0; i < 16; i += BLOCKSIZE)
+    for (int i = 0; i < blockCount ; i ++)
 	{
 		// 把16字节的明文转换为4x4状态矩阵来进行处理
         loadStateArray(state, input);
@@ -358,7 +366,7 @@ int Aes_ECB::aesEncrypt(const uint8_t *input, uint8_t *key, uint8_t *ct)
 *****************************************************************************/
 int Aes_ECB::aesDecrypt(const uint8_t *key, const uint8_t *ct, uint8_t *pt)
 {
-    printf("开始解密\n");
+    LOGD("开始解密\n");
     AesKey aesKey;
     uint8_t *pos = pt;
     const uint32_t *rk = aesKey.dK;  //解密密钥指针
@@ -368,7 +376,7 @@ int Aes_ECB::aesDecrypt(const uint8_t *key, const uint8_t *ct, uint8_t *pt)
 
     if (NULL == key || NULL == ct || NULL == pt)
 	{
-        printf("param err.\n");
+        LOGE("param err.\n");
         return -1;
     }
 
@@ -421,6 +429,7 @@ void Aes_ECB::Cropping(unsigned char *lockData, unsigned char *savaData)
     uint8_t tmp[128] = {0};
     memcpy(savaData,lockData,13);//拷贝需要加密之前的数据
     uint8_t meter = *(lockData + 4);//需要加密的大小
+    int len =0;
 
     // 获取当前时间点
     chrono::system_clock::time_point now = chrono::system_clock::now();
@@ -428,24 +437,29 @@ void Aes_ECB::Cropping(unsigned char *lockData, unsigned char *savaData)
     time_t now_time_t = chrono::system_clock::to_time_t(now);
     // 转换为 tm 结构（包含年、月、日、时、分、秒等信息）
     tm* now_tm = localtime(&now_time_t);
-    char chTime[6] = {0};
+    char chTime[13] = {0};
     sprintf(chTime, "%02d%02d%02d%02d%02d%02d", (now_tm->tm_year + 1900) % 100, now_tm->tm_mon + 1, now_tm->tm_mday, now_tm->tm_hour, now_tm->tm_min, now_tm->tm_sec);
     
     Str2Hex(chTime, tmp);
+    len+=6;
     // 加入时间到明文数据中
     strncat((char *)tmp, (char *)lockData + 13,meter);
+    len+=meter;
 
-    Config::Show(tmp,"明文数据");
+    Config::Show(tmp,"明文数据",128);
 
     //判断是否为16的倍数，不是则填充0x00到十六的倍数，是则增加16个0x00
     int paddingNeeded =16 -(meter + 6)%16;
-    strncat((char*)tmp, supply,paddingNeeded);
-
+    
+    if (paddingNeeded != 16) {
+        strncat((char*)tmp, supply,paddingNeeded);
+    }
+    len+=paddingNeeded;
     //加密
-  
-    aesEncrypt(tmp, (uint8_t *)"1234567890123456", data);
+    printf("meter+paddingNeeded = %d\n",len);
+    aesEncrypt(tmp,len,(uint8_t *)Aes_pass.c_str(), data);
 
-    Config::Show(data,"加密数据");
+    Config::Show(data,"加密数据",len);
     //将加密后的完整报文填入
     savaData[3] = 0x80;//修改消息属性 0x00--》0x80 0x80表示加密
     savaData[4] = meter+6;//需要加密的原本数据+时间防伪码

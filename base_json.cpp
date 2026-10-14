@@ -1,5 +1,8 @@
 #include "base_json.h"
 
+
+
+/*功能：Cjson组包*/
 base_json::base_json()
 {
     //montage_json();

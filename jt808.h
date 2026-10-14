@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <thread>
 #include <stdint.h>
-
+#include "jt808_Pack.h"
 
 typedef uint16_t WORD;
 typedef int DWORD;
@@ -19,7 +19,7 @@ typedef uint64_t hhd_os_tick_t;
 
 
 #define JT808_MSG_TERM_HEART_BEAT               0x0002  // 心跳
-#define JT808_MSG_TERM_LOCATION                   0x0200  // 位置信息汇报
+//#define JT808_MSG_TERM_LOCATION                   0x0200  // 位置信息汇报
 #define PACKAGE_MAX_DATA_LENGTH  768    /**< 最大数据长度(数据字段序列化后的长度) */
 #define EXT_FIELD_MAX_COUNT 20 // 报文打包过程中最多附加字段个数
 #define PACKAGE_MAX_RETRY_COUNT  3      /**< 最大重发次数 */
@@ -28,11 +28,11 @@ typedef uint64_t hhd_os_tick_t;
 #if JT808_TYPE_HLINK
 
 	#define JT808_HEAD_POS_HEAD_START       1
-	#define JT808_HEAD_POS_MSG_ID       (JT808_HEAD_POS_HEAD_START + 0)
-	#define JT808_HEAD_POS_MSG_ATTR     (JT808_HEAD_POS_HEAD_START + 2)
-	#define JT808_HEAD_POS_MSG_TERM     (JT808_HEAD_POS_HEAD_START + 4)
-	#define JT808_HEAD_POS_MSG_SN       (JT808_HEAD_POS_HEAD_START + 10)
-	#define JT808_BODY_START_POS        (JT808_HEAD_POS_HEAD_START + 12)
+	#define JT808_HEAD_POS_MSG_ID       (JT808_HEAD_POS_HEAD_START + 0)// 消息ID位置（2字节）
+	#define JT808_HEAD_POS_MSG_ATTR     (JT808_HEAD_POS_HEAD_START + 2)// 消息属性位置（2字节）
+	#define JT808_HEAD_POS_MSG_TERM     (JT808_HEAD_POS_HEAD_START + 4)// 终端手机号位置（6字节）
+	#define JT808_HEAD_POS_MSG_SN       (JT808_HEAD_POS_HEAD_START + 10)// 消息流水号位置（2字节）
+	#define JT808_BODY_START_POS        (JT808_HEAD_POS_HEAD_START + 12)// 消息体起始位置
 
 	#define JT808_HEAD_TERM_NO_LENGTH   6
 
@@ -101,6 +101,13 @@ typedef uint64_t hhd_os_tick_t;
 #define HLINK_STAT_SIMCARD1 (1 << 20)        // 0:缺省;  01:当前sim卡1;  10:当前sim卡2
 #define HLINK_STAT_SIMCARD2 (1 << 21)        //
 
+
+//获取设备号
+#define SYS_INFO_PATH "/sys/class/sunxi_info/sys_info"
+#define CHIPID_PREFIX "sunxi_chipid      : "
+#define CHIPID_LENGTH 36
+
+
 // ---------------------------------------
 // - 0200 扩展字段定义
 // ---------------------------------------
@@ -137,18 +144,21 @@ enum EXT_FIELD_0200
     EXT_FIELD_0200_REPORTED_VIDEO = 0xa0, // 照片/短视频文件ID.（视频终端专用）
 };
 
-typedef enum {
-	/* 基本类型 */
-	JT808_DTYPE_BYTE,
-	JT808_DTYPE_WORD,
-	JT808_DTYPE_DWORD,
-	JT808_DTYPE_BYTE_ARR,
-	JT808_DTYPE_BCD,
-	JT808_DTYPE_STRING,
+enum JT_808
+{
+    JT808_MSG_TERM_LOCATION = 0x0200, //实时位置状态信息汇报
+    JT808_MSG_PLAT_COMM_RESP = 0x8001, // 平台通用应答
+    JT808_MSG_TERMINAL_PARAMETER_SETTING = 0x0310, //终端参数设置
+    JT808_MSG_TERMINAL_PARAMETER_SETTING_RESP = 0x0311, //终端参数设置应答
+    JT808_MSG_TERMINAL_PARAMETER_QUERY =0x0312, //终端参数查询
+    JT808_MSG_TERMINAL_PARAMETER_QUERY_RESP =0x0313, //终端参数查询应答
+    JT808_MSG_PLATFORM_PUSH =0x0314, //平台下发指令
+    JT808_MSG_PLATFORM_PUSH_RESP =0x0315, //平台下发指令应答
+    JT808_MSG_CAR_REPORT = 0x0316,//上报车牌到平台
+    JT808_MSG_CAR_REPORT_RESP =0x0317,//上报车牌到平台应答
+};
 
-	JT808_DTYPE_WORD_ARR_WITH_COUNT,     // 一个字节表示word字段的个数， 后面跟n个word
-	JT808_DTYPE_NONE
-} jt808_dtype_t;
+
 
 
 typedef enum jt808_send_channel_type {
@@ -229,234 +239,235 @@ typedef enum sys_ipc_request_type {
 
 typedef enum hhd_event_type
 {
-    HHD_EV_SUOGAN_IN = 0x0000u,                       /**>  锁杆闭合事件  0x00（普通）      */
-    HHD_EV_SUOGAN_OUT = 0x0001u,                      /**>  锁杆打开事件  0x00（普通）      */
-    HHD_EV_LOCK_BY_SUOGAN_IN = 0x0002u,               /**>  闭合锁杆施封事件;   0x00（普通） */
-    HHD_EV_LOCK_BY_NFC = 0x0003u,                     /**>  刷卡施封成功事件;   0x00（普通） */
-    HHD_EV_UNLOCK_BY_NFC = 0x0004u,                   /**>  刷卡解封成功事件;   0x00（普通） */
-    HHD_EV_LOCK_BY_BLE = 0x0005u,                     /**>  BLE施封成功事件;  0x00（普通）  */
-    HHD_EV_UNLOCK_BY_BLE = 0x0006u,                   /**>  BLE解封成功事件;  0x00（普通）  */
-    HHD_EV_LOCK_BY_PLATFORM = 0x0007u,                /**>  平台施封成功事件;   0x00（普通） */
-    HHD_EV_UNLOCK_BY_PLATFORM = 0x0008u,              /**>  平台解封成功事件;   0x00（普通） */
-    HHD_EV_LOCK_BY_SMS = 0x0009u,                     /**>  SMS施封成功事件;  0x00（普通）  */
-    HHD_EV_UNLOCK_BY_SMS = 0x000Au,                   /**>  SMS解封成功事件;  0x00（普通）  */
-    HHD_EV_ERR_LOCK_INVALID_NFC = 0x000Bu,            /**>  刷非注册卡施封失败事件;    0x00（普通） */
-    HHD_EV_ERR_UNLOCK_INVALID_NFC = 0x000Cu,          /**>  刷非注册卡解封失败事件;    0x00（普通） */
-                                                      /*----------------------------------------------------------------------------------------------*/
-    HHD_EV_NFC_LOCK_OUTOF_AREA = 0x000Du,             /**>  区域外刷卡施封失败事件 0x01（报警） */
-    HHD_EV_NFC_UNLOCK_OUTOF_AREA = 0x000Eu,           /**>  区域外刷卡解封失败事件 0x01（报警） */
-    HHD_EV_SUOGAN_OUT_IN_LOCK = 0x000Fu,              /**>  施封状态下锁杆被打开事件    0x01（报警） */
-    HHD_EV_WAIKE = 0x0010u,                           /**>  外壳被拆事件  0x01（报警） */
-    HHD_EV_FANGJIAN = 0x0011u,                        /**>  锁杆/锁绳内导线被剪断事件   0x01（报警） */
-    HHD_EV_LOW_VOLTAGE = 0x0012u,                     /**>  电池电压过低休眠下线  0x01(报警) */
-    HHD_EV_INVALID_PASSWORD = 0x0013u,                /**>  输入错误密码次数过多  0x01(报警) */
-    HHD_EV_WAIT_LOCK_TIMEOUT = 0x0014u,               /**>  解封后长时间未拉开锁杆，自动施封;   0x00（普通）*/
-    HHD_EV_DAOLI_WAKEUP = 0x0015u,                    /**>  短连接倒立激活上线   0x00（普通） */
-    HHD_EV_TOUCH_WAKEUP = 0x0016u,                    /**>  短连接触摸激活上线   0x00（普通） */
-    HHD_EV_USER_LOW_VOLTAGE = 0x0017u,                /**>  用户设定的低电量阈值报警提醒  0x01（报警） */
-    HHD_EV_LOCK_MOTOR_STUCK = 0x0018u,                /**>  施封时候电机卡住报警  0x01（报警） */
-    HHD_EV_UNLOCK_MOTOR_STUCK = 0x0019u,              /**>  解封时候电机卡住报警  0x01（报警） */
-    HHD_EV_GPS_ANTEN_OPEN = 0x001Au,                  /**>  定位天线开路报警    0x01（报警） */
-    HHD_EV_GPS_ANTEN_SHORT_CIRCUIT = 0x001Bu,         /**>  定位天线短路报警   0x01（报警） */
-    HHD_EV_MCU_COMMUNICAT = 0x001Cu,                  /**>  MCU通信异常报警  0x01（报警） */
-    HHD_EV_CHARG_FULL = 0x001Du,                      /**>  充满电时    0x00（普通）  */
-    HHD_EV_CHARGER_PULLOUT = 0x001Eu,                 /**>  拔除充电器   0x00（普通）  */
-    HHD_EV_CHARGER_INSERT = 0x001Fu,                  /**>  连接充电器充电 0x00（普通） */
-    HHD_EV_NORMAL_SHUTDOWN = 0x0020u,                 /**> 设备正常关机提醒 0x00（普通） */
-    HHD_EV_UNLOCK_BY_STATIC_PSWORD = 0x0022u,         /**>  静态密码开锁事件 0x00（普通） */
-    HHD_EV_LOCK_PHONE_BLE = 0x0023u,                  /**>  手机端上报蓝牙施封 0x00（普通） */
-    HHD_EV_UNLOCK_PHONE_BLE = 0x0024u,                /**>  手机端上报蓝牙解封 0x00（普通） */
-    HHD_EV_BUSINESS_DATA_PLATFORM = 0x0025u,          /**>  业务数据发生变更 0x00（普通） */
-    HHD_EV_UNLOCK_BY_RANDOM_PSWORD = 0x0026u,         /**>  动态密码开锁事件 0x00（普通） */
-    HHD_EV_BUSINESS_DATA_BLE = 0x002Bu,               /**>  蓝牙写入业务数据 0x00（普通） */
-    HHD_EV_BUSINESS_DATA_GSENSOR = 0x002Cu,           /**>  上报翻转事件     0x00（普通） */
-    HHD_EV_UNLOCK_SUBLOCK_BY_PLATFORM_LORA = 0x0051u, /**>  母锁操作：平台远程经母锁LORA解封子锁事件 0x00（普通） */
-    HHD_EV_UNLOCK_SUBLOCK_BY_BLE = 0x0052u,           /**>  自身操作：APP通过BLE解封子锁事件 0x00（普通） */
-    HHD_EV_UNLOCK_SUBLOCK_BY_BLE_LORA = 0x0053u,      /**>  母锁操作：APP通过BLE经母锁LORA解封子锁事件 0x00（普通） */
-    HHD_EV_UNLOCK_SUBLOCK_BY_SMS_LORA = 0x0054u,      /**>  母锁操作：远程SMS经母锁LORA解封子锁事件 0x00（普通）  */
-    HHD_EV_LOCK_SUBLOCK_BY_SUOGAN_IN = 0x0055u,       /**>  自身操作：子锁闭合锁杆自动施封事件 0x00（普通）  */
-    HHD_EV_UNLOCK_SUBLOCK_BY_SUOGAN_OUT = 0x0056u,    /**>  自身操作：子锁解封后打开锁杆事件 0x00（普通）  */
-    HHD_EV_SUBLOCK_BY_WAIKE_OPEN = 0x0057u,           /**>  自身操作：子锁外壳被拆事件 0x01（报警）  */
-    HHD_EV_LOCK_SUBLOCK_BY_SUOGAN_EXC = 0x0058u,      /**>  自身操作：子锁施封状态下锁杆被打开/被剪事件(异常) 0x01（报警）  */
-    HHD_EV_SUBLOCK_BY_TIMEOUT = 0x0059u,              /**>  自身操作：子锁通讯超时事件 0x01（报警）  */
-    HHD_EV_SUBLOCK_BY_BATTERY_LOW = 0x005Au,          /**>  自身操作：子锁低电量报警事件 0x01（报警）  */
-    //                                           = 0x005Bu,                /**>  该事件待定 母锁操作：检测到行驶自动禁止LORA解封事件 0x00（普通）  */
-    HHD_EV_SET_UNLOCK_SUBLOCK_BY_BLE_LORA = 0x005Cu,      /**>  母锁操作：BLE设置LORA解封事件; 0x00（普通） */
-    HHD_EV_SET_LOCK_SUBLOCK_BY_PLATFORM_LORA = 0x005Du,   /**>  母锁操作：平台设置LORA施封事件; 0x00（普通） */
-    HHD_EV_SET_UNLOCK_SUBLOCK_BY_PLATFORM_LORA = 0x005Eu, /**>  母锁操作：平台设置LORA解封事件; 0x00（普通） */
-    HHD_EV_SET_LOCK_SUBLOCK_BY_SMS_LORA = 0x005Fu,        /**>  母锁操作：SMS设置LORA施封事件; 0x00（普通） */
-    HHD_EV_SET_UNLOCK_SUBLOCK_BY_SMS_LORA = 0x0060u,      /**>  母锁操作：SMS设置LORA解封事件; 0x00（普通） */
-    HHD_EV_UNLOCK_SUBLOCK_BY_NFC = 0x0061u,               /**>  自身操作：子锁刷自身注册卡解封 0x00（普通） */
-    HHD_EV_LOCK_SUBLOCK_BY_NFC = 0x0062u,                 /**>  自身操作：子锁刷自身注册卡施封 0x00（普通） */
-    HHD_EV_SUBLOCK_BY_UNLOCK_INVALID_NFC = 0x0063u,       /**>  母锁操作：子锁刷非注册解封卡（子锁与母锁都没有绑定该卡） 0x00（普通） */
-    HHD_EV_SUBLOCK_BY_LOCK_INVALID_NFC = 0x0064u,         /**>  母锁操作：子锁刷非注册施封卡（子锁与母锁都没有绑定该卡） 0x00（普通） */
-    HHD_EV_UNLOCK_SUBLOCK_BY_NFC_LORA = 0x0065u,          /**>  母锁操作：子锁刷卡经母锁解封成功 0x00（普通） */
-    HHD_EV_LOCK_SUBLOCK_BY_NFC_LORA = 0x0066u,            /**>  母锁操作：子锁刷卡经母锁施封成功 0x00（普通） */
-    HHD_EV_LOCK_SUBLOCK_BY_PLATFORM_LORA = 0x0067u,       /**>  母锁操作：平台远程经母锁LORA施封子锁事件 0x00（普通） */
-    HHD_EV_LOCK_SUBLOCK_BY_BLE = 0x0068u,                 /**>  自身操作：APP通过BLE施封子锁事件 0x00（普通） */
-    HHD_EV_LOCK_SUBLOCK_BY_BLE_LORA = 0x0069u,            /**>  母锁操作：APP通过BLE经母锁LORA施封子锁事件 0x00（普通） */
-    HHD_EV_LOCK_SUBLOCK_BY_SMS_LORA = 0x006Au,            /**>  母锁操作：远程SMS经母锁LORA施封子锁事件 0x00（普通） */
-    HHD_EV_SET_LOCK_SUBLOCK_BY_BLE_LORA = 0x006Bu,        /**>  母锁操作：BLE设置LORA施封事件; 0x00（普通） */
-    HHD_EV_LOCK_SUBLOCK_BY_TIME_OUT = 0x006Cu,            /**>  自身操作：子锁解封后长时间未拉开锁杆，自动施封; 0x00（普通） */
+    HHD_EV_MACHINE_AI_NUMBER = 0x01,                    /**>  ai相机数量     */
+    // HHD_EV_SUOGAN_IN = 0x0000u,                       /**>  锁杆闭合事件  0x00（普通）      */
+    // HHD_EV_SUOGAN_OUT = 0x0001u,                      /**>  锁杆打开事件  0x00（普通）      */
+    // HHD_EV_LOCK_BY_SUOGAN_IN = 0x0002u,               /**>  闭合锁杆施封事件;   0x00（普通） */
+    // HHD_EV_LOCK_BY_NFC = 0x0003u,                     /**>  刷卡施封成功事件;   0x00（普通） */
+    // HHD_EV_UNLOCK_BY_NFC = 0x0004u,                   /**>  刷卡解封成功事件;   0x00（普通） */
+    // HHD_EV_LOCK_BY_BLE = 0x0005u,                     /**>  BLE施封成功事件;  0x00（普通）  */
+    // HHD_EV_UNLOCK_BY_BLE = 0x0006u,                   /**>  BLE解封成功事件;  0x00（普通）  */
+    // HHD_EV_LOCK_BY_PLATFORM = 0x0007u,                /**>  平台施封成功事件;   0x00（普通） */
+    // HHD_EV_UNLOCK_BY_PLATFORM = 0x0008u,              /**>  平台解封成功事件;   0x00（普通） */
+    // HHD_EV_LOCK_BY_SMS = 0x0009u,                     /**>  SMS施封成功事件;  0x00（普通）  */
+    // HHD_EV_UNLOCK_BY_SMS = 0x000Au,                   /**>  SMS解封成功事件;  0x00（普通）  */
+    // HHD_EV_ERR_LOCK_INVALID_NFC = 0x000Bu,            /**>  刷非注册卡施封失败事件;    0x00（普通） */
+    // HHD_EV_ERR_UNLOCK_INVALID_NFC = 0x000Cu,          /**>  刷非注册卡解封失败事件;    0x00（普通） */
+    //                                                   /*----------------------------------------------------------------------------------------------*/
+    // HHD_EV_NFC_LOCK_OUTOF_AREA = 0x000Du,             /**>  区域外刷卡施封失败事件 0x01（报警） */
+    // HHD_EV_NFC_UNLOCK_OUTOF_AREA = 0x000Eu,           /**>  区域外刷卡解封失败事件 0x01（报警） */
+    // HHD_EV_SUOGAN_OUT_IN_LOCK = 0x000Fu,              /**>  施封状态下锁杆被打开事件    0x01（报警） */
+    // HHD_EV_WAIKE = 0x0010u,                           /**>  外壳被拆事件  0x01（报警） */
+    // HHD_EV_FANGJIAN = 0x0011u,                        /**>  锁杆/锁绳内导线被剪断事件   0x01（报警） */
+    // HHD_EV_LOW_VOLTAGE = 0x0012u,                     /**>  电池电压过低休眠下线  0x01(报警) */
+    // HHD_EV_INVALID_PASSWORD = 0x0013u,                /**>  输入错误密码次数过多  0x01(报警) */
+    // HHD_EV_WAIT_LOCK_TIMEOUT = 0x0014u,               /**>  解封后长时间未拉开锁杆，自动施封;   0x00（普通）*/
+    // HHD_EV_DAOLI_WAKEUP = 0x0015u,                    /**>  短连接倒立激活上线   0x00（普通） */
+    // HHD_EV_TOUCH_WAKEUP = 0x0016u,                    /**>  短连接触摸激活上线   0x00（普通） */
+    // HHD_EV_USER_LOW_VOLTAGE = 0x0017u,                /**>  用户设定的低电量阈值报警提醒  0x01（报警） */
+    // HHD_EV_LOCK_MOTOR_STUCK = 0x0018u,                /**>  施封时候电机卡住报警  0x01（报警） */
+    // HHD_EV_UNLOCK_MOTOR_STUCK = 0x0019u,              /**>  解封时候电机卡住报警  0x01（报警） */
+    // HHD_EV_GPS_ANTEN_OPEN = 0x001Au,                  /**>  定位天线开路报警    0x01（报警） */
+    // HHD_EV_GPS_ANTEN_SHORT_CIRCUIT = 0x001Bu,         /**>  定位天线短路报警   0x01（报警） */
+    // HHD_EV_MCU_COMMUNICAT = 0x001Cu,                  /**>  MCU通信异常报警  0x01（报警） */
+    // HHD_EV_CHARG_FULL = 0x001Du,                      /**>  充满电时    0x00（普通）  */
+    // HHD_EV_CHARGER_PULLOUT = 0x001Eu,                 /**>  拔除充电器   0x00（普通）  */
+    // HHD_EV_CHARGER_INSERT = 0x001Fu,                  /**>  连接充电器充电 0x00（普通） */
+    // HHD_EV_NORMAL_SHUTDOWN = 0x0020u,                 /**> 设备正常关机提醒 0x00（普通） */
+    // HHD_EV_UNLOCK_BY_STATIC_PSWORD = 0x0022u,         /**>  静态密码开锁事件 0x00（普通） */
+    // HHD_EV_LOCK_PHONE_BLE = 0x0023u,                  /**>  手机端上报蓝牙施封 0x00（普通） */
+    // HHD_EV_UNLOCK_PHONE_BLE = 0x0024u,                /**>  手机端上报蓝牙解封 0x00（普通） */
+    // HHD_EV_BUSINESS_DATA_PLATFORM = 0x0025u,          /**>  业务数据发生变更 0x00（普通） */
+    // HHD_EV_UNLOCK_BY_RANDOM_PSWORD = 0x0026u,         /**>  动态密码开锁事件 0x00（普通） */
+    // HHD_EV_BUSINESS_DATA_BLE = 0x002Bu,               /**>  蓝牙写入业务数据 0x00（普通） */
+    // HHD_EV_BUSINESS_DATA_GSENSOR = 0x002Cu,           /**>  上报翻转事件     0x00（普通） */
+    // HHD_EV_UNLOCK_SUBLOCK_BY_PLATFORM_LORA = 0x0051u, /**>  母锁操作：平台远程经母锁LORA解封子锁事件 0x00（普通） */
+    // HHD_EV_UNLOCK_SUBLOCK_BY_BLE = 0x0052u,           /**>  自身操作：APP通过BLE解封子锁事件 0x00（普通） */
+    // HHD_EV_UNLOCK_SUBLOCK_BY_BLE_LORA = 0x0053u,      /**>  母锁操作：APP通过BLE经母锁LORA解封子锁事件 0x00（普通） */
+    // HHD_EV_UNLOCK_SUBLOCK_BY_SMS_LORA = 0x0054u,      /**>  母锁操作：远程SMS经母锁LORA解封子锁事件 0x00（普通）  */
+    // HHD_EV_LOCK_SUBLOCK_BY_SUOGAN_IN = 0x0055u,       /**>  自身操作：子锁闭合锁杆自动施封事件 0x00（普通）  */
+    // HHD_EV_UNLOCK_SUBLOCK_BY_SUOGAN_OUT = 0x0056u,    /**>  自身操作：子锁解封后打开锁杆事件 0x00（普通）  */
+    // HHD_EV_SUBLOCK_BY_WAIKE_OPEN = 0x0057u,           /**>  自身操作：子锁外壳被拆事件 0x01（报警）  */
+    // HHD_EV_LOCK_SUBLOCK_BY_SUOGAN_EXC = 0x0058u,      /**>  自身操作：子锁施封状态下锁杆被打开/被剪事件(异常) 0x01（报警）  */
+    // HHD_EV_SUBLOCK_BY_TIMEOUT = 0x0059u,              /**>  自身操作：子锁通讯超时事件 0x01（报警）  */
+    // HHD_EV_SUBLOCK_BY_BATTERY_LOW = 0x005Au,          /**>  自身操作：子锁低电量报警事件 0x01（报警）  */
+    // //                                           = 0x005Bu,                /**>  该事件待定 母锁操作：检测到行驶自动禁止LORA解封事件 0x00（普通）  */
+    // HHD_EV_SET_UNLOCK_SUBLOCK_BY_BLE_LORA = 0x005Cu,      /**>  母锁操作：BLE设置LORA解封事件; 0x00（普通） */
+    // HHD_EV_SET_LOCK_SUBLOCK_BY_PLATFORM_LORA = 0x005Du,   /**>  母锁操作：平台设置LORA施封事件; 0x00（普通） */
+    // HHD_EV_SET_UNLOCK_SUBLOCK_BY_PLATFORM_LORA = 0x005Eu, /**>  母锁操作：平台设置LORA解封事件; 0x00（普通） */
+    // HHD_EV_SET_LOCK_SUBLOCK_BY_SMS_LORA = 0x005Fu,        /**>  母锁操作：SMS设置LORA施封事件; 0x00（普通） */
+    // HHD_EV_SET_UNLOCK_SUBLOCK_BY_SMS_LORA = 0x0060u,      /**>  母锁操作：SMS设置LORA解封事件; 0x00（普通） */
+    // HHD_EV_UNLOCK_SUBLOCK_BY_NFC = 0x0061u,               /**>  自身操作：子锁刷自身注册卡解封 0x00（普通） */
+    // HHD_EV_LOCK_SUBLOCK_BY_NFC = 0x0062u,                 /**>  自身操作：子锁刷自身注册卡施封 0x00（普通） */
+    // HHD_EV_SUBLOCK_BY_UNLOCK_INVALID_NFC = 0x0063u,       /**>  母锁操作：子锁刷非注册解封卡（子锁与母锁都没有绑定该卡） 0x00（普通） */
+    // HHD_EV_SUBLOCK_BY_LOCK_INVALID_NFC = 0x0064u,         /**>  母锁操作：子锁刷非注册施封卡（子锁与母锁都没有绑定该卡） 0x00（普通） */
+    // HHD_EV_UNLOCK_SUBLOCK_BY_NFC_LORA = 0x0065u,          /**>  母锁操作：子锁刷卡经母锁解封成功 0x00（普通） */
+    // HHD_EV_LOCK_SUBLOCK_BY_NFC_LORA = 0x0066u,            /**>  母锁操作：子锁刷卡经母锁施封成功 0x00（普通） */
+    // HHD_EV_LOCK_SUBLOCK_BY_PLATFORM_LORA = 0x0067u,       /**>  母锁操作：平台远程经母锁LORA施封子锁事件 0x00（普通） */
+    // HHD_EV_LOCK_SUBLOCK_BY_BLE = 0x0068u,                 /**>  自身操作：APP通过BLE施封子锁事件 0x00（普通） */
+    // HHD_EV_LOCK_SUBLOCK_BY_BLE_LORA = 0x0069u,            /**>  母锁操作：APP通过BLE经母锁LORA施封子锁事件 0x00（普通） */
+    // HHD_EV_LOCK_SUBLOCK_BY_SMS_LORA = 0x006Au,            /**>  母锁操作：远程SMS经母锁LORA施封子锁事件 0x00（普通） */
+    // HHD_EV_SET_LOCK_SUBLOCK_BY_BLE_LORA = 0x006Bu,        /**>  母锁操作：BLE设置LORA施封事件; 0x00（普通） */
+    // HHD_EV_LOCK_SUBLOCK_BY_TIME_OUT = 0x006Cu,            /**>  自身操作：子锁解封后长时间未拉开锁杆，自动施封; 0x00（普通） */
 
-    /*LORA防拆标签设备相关的事件*/
-    HHD_PLATFORM_LORA_BE_DISMANTLED = 0x0080u,       /**>  LORA防拆标签被拆*/
-    HHD_PLATFORM_LORA_TIMEOUT = 0x0081u,             /**>  LORA防拆标签心跳超时 */
-    HHD_PLATFORM_LORA_RETURN_TO_NORMAL_BE = 0x0082u, /**>  LORA防拆标签被拆恢复正常 */
-    HHD_PLATFORM_LORA_RETURN_TO_NORMAL = 0x0083u,    /**>  LORA防拆标签心跳超时恢复正常 */
+    // /*LORA防拆标签设备相关的事件*/
+    // HHD_PLATFORM_LORA_BE_DISMANTLED = 0x0080u,       /**>  LORA防拆标签被拆*/
+    // HHD_PLATFORM_LORA_TIMEOUT = 0x0081u,             /**>  LORA防拆标签心跳超时 */
+    // HHD_PLATFORM_LORA_RETURN_TO_NORMAL_BE = 0x0082u, /**>  LORA防拆标签被拆恢复正常 */
+    // HHD_PLATFORM_LORA_RETURN_TO_NORMAL = 0x0083u,    /**>  LORA防拆标签心跳超时恢复正常 */
 
     HHD_EV_FIRMWARE_VERSION = 0x0090u, /**>  固件版本上报事件 */
 
-    /*驾驶行为事件*/
-    HHD_EV_OVERSPEED_ALARM                      = 0x00A0u,               /**>  超速报警事件 */                                  
-    HHD_EV_PARKINT_OVERTIME_ALARM               = 0x00A1u,               /**>  停车超时报警事件 */     
+    // /*驾驶行为事件*/
+    // HHD_EV_OVERSPEED_ALARM                      = 0x00A0u,               /**>  超速报警事件 */                                  
+    // HHD_EV_PARKINT_OVERTIME_ALARM               = 0x00A1u,               /**>  停车超时报警事件 */     
 
-        /*电子围栏相关事件*/
-    //刷卡
-    HHD_EV_NO_VALID_TIME_NFC_UNLOCK_FAIL         = 0x0030u,      /**>  电子围栏非有效截止日期刷卡，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_NFC_LOCK_FAIL           = 0x0031u,      /**>  电子围栏非有效截止日期刷卡，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_NFC_UNLOCK_FAIL  = 0x0032u,    /**>  电子围栏非有效时间区间刷卡，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_NFC_LOCK_FAIL  = 0x0033u,      /**>  电子围栏非有效时间区间刷卡，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_CARD_ID_NFC_LOCK_FAIL        = 0x0048u,      /**>  非有效围栏规则卡施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_CARD_ID_NFC_UNLOCK_FAIL      = 0x0049u,      /**>  非有效围栏规则卡解封失败事件     0x00（普通） */
-    HHD_EV_IN_AREA_NFC_UNLOCK_SUCCESS            = 0x004Au,      /**>  电子围栏内刷卡解封成功事件     0x00（普通） */
-    HHD_EV_IN_AREA_NFC_LOCK_SUCCESS              = 0x004Bu,      /**>  电子围栏内刷卡施封成功事件     0x00（普通） */
-    HHD_EV_OUT_AREA_NFC_UNLOCK_FAIL              = 0x004Cu,      /**>  电子围栏外刷卡解封失败事件     0x00（普通） */
-    HHD_EV_OUT_AREA_NFC_LOCK_FAIL                = 0x004Du,      /**>  电子围栏外刷卡施封失败事件     0x00（普通） */
-    //密码
-    HHD_EV_NO_VALID_PASSWORD_UNLOCK_FAIL         = 0x0034u,      /**>  电子围栏内非有效密码，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_PASSWORD_LOCK_FAIL           = 0x0035u,      /**>  电子围栏内非有效密码，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_PASSWORD_UNLOCK_FAIL    = 0x0036u,      /**>  电子围栏内非有效截止日期密码，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_PASSWORD_LOCK_FAIL      = 0x0037u,      /**>  电子围栏内非有效截止日期密码，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_PASSWORD_UNLOCK_FAIL = 0x0038u,/**>  电子围栏内非有效时间区间密码，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_PASSWORD_LOCK_FAIL = 0x0039u,  /**>  电子围栏内非有效时间区间密码，施封失败事件     0x00（普通） */
-    HHD_EV_IN_AREA_PASSWORD_UNLOCK_SUCCESS       = 0x004Eu,      /**>  电子围栏内密码解封成功事件     0x00（普通） */
-    HHD_EV_OUT_AREA_PASSWORD_UNLOCK_FAIL          = 0x004Fu,      /**>  电子围栏外密码解封失败事件     0x00（普通） */
-    HHD_EV_IN_AREA_PASSWORD_LOCK_SUCCESS         = 0x0114u,        /**>  电子围栏内密码施封成功事件     0x00（普通） */
-    HHD_EV_OUT_AREA_PASSWORD_LOCK_FAIL           = 0x0115u,        /**>  电子围栏外密码施封失败事件     0x00（普通） */
-    //SMS
-    HHD_EV_NO_VALID_SMS_UNLOCK_FAIL              = 0x003au,      /**>  电子围栏内非有效SMS参数，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_SMS_LOCK_FAIL                = 0x003bu,      /**>  电子围栏内非有效SMS参数，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_SMS_UNLOCK_FAIL         = 0x003cu,      /**>  电子围栏非有效截止日期SMS，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_SMS_LOCK_FAIL           = 0x003du,      /**>  电子围栏非有效截止日期SMS，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_SMS_UNLOCK_FAIL = 0x003eu,     /**>  电子围栏非有效时间区间SMS，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_SMS_LOCK_FAIL  = 0x003fu,      /**>  电子围栏非有效时间区间SMS，施封失败事件     0x00（普通） */
-    HHD_EV_IN_AREA_SMS_LOCK_SUCCESS              = 0x0100u,      /**>  电子围栏内SMS施封成功事件     0x00（普通） */
-    HHD_EV_IN_AREA_SMS_UNLOCK_SUCCESS            = 0x0101u,      /**>  电子围栏内SMS解封成功事件     0x00（普通） */
-    HHD_EV_OUT_AREA_SMS_LOCK_FAIL                = 0x0102u,      /**>  电子围栏外SMS施封失败事件     0x00（普通） */
-    HHD_EV_OUT_AREA_SMS_UNLOCK_FAIL              = 0x0103u,      /**>  电子围栏外SMS解封失败事件     0x00（普通） */
-    //BLE
-    HHD_EV_NO_VALID_BLE_UNLOCK_FAIL              = 0x0040u,      /**>  电子围栏内非有效BLE参数，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_BLE_LOCK_FAIL                = 0x0041u,      /**>  电子围栏内非有效BLE参数，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_BLE_UNLOCK_FAIL         = 0x0042u,      /**>  电子围栏非有效截止日期BLE，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_BLE_LOCK_FAIL           = 0x0043u,      /**>  电子围栏非有效截止日期BLE，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_BLE_UNLOCK_FAIL = 0x0044u,     /**>  电子围栏非有效时间区间BLE，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_BLE_LOCK_FAIL  = 0x0045u,      /**>  电子围栏非有效时间区间BLE，施封失败事件     0x00（普通） */
-    HHD_EV_IN_AREA_BLE_LOCK_SUCCESS              = 0x0104u,      /**>  电子围栏内蓝牙施封成功事件     0x00（普通） */
-    HHD_EV_IN_AREA_BLE_UNLOCK_SUCCESS            = 0x0105u,      /**>  电子围栏内蓝牙解封成功事件     0x00（普通） */
-    HHD_EV_OUT_AREA_BLE_UNLOCK_FAIL              = 0x0106u,      /**>  电子围栏外蓝牙解封失败事件     0x00（普通） */
-    HHD_EV_OUT_AREA_BLE_LOCK_FAIL                = 0x0107u,      /**>  电子围栏外蓝牙施封失败事件     0x00（普通） */
+    //     /*电子围栏相关事件*/
+    // //刷卡
+    // HHD_EV_NO_VALID_TIME_NFC_UNLOCK_FAIL         = 0x0030u,      /**>  电子围栏非有效截止日期刷卡，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_NFC_LOCK_FAIL           = 0x0031u,      /**>  电子围栏非有效截止日期刷卡，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_NFC_UNLOCK_FAIL  = 0x0032u,    /**>  电子围栏非有效时间区间刷卡，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_NFC_LOCK_FAIL  = 0x0033u,      /**>  电子围栏非有效时间区间刷卡，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_CARD_ID_NFC_LOCK_FAIL        = 0x0048u,      /**>  非有效围栏规则卡施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_CARD_ID_NFC_UNLOCK_FAIL      = 0x0049u,      /**>  非有效围栏规则卡解封失败事件     0x00（普通） */
+    // HHD_EV_IN_AREA_NFC_UNLOCK_SUCCESS            = 0x004Au,      /**>  电子围栏内刷卡解封成功事件     0x00（普通） */
+    // HHD_EV_IN_AREA_NFC_LOCK_SUCCESS              = 0x004Bu,      /**>  电子围栏内刷卡施封成功事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_NFC_UNLOCK_FAIL              = 0x004Cu,      /**>  电子围栏外刷卡解封失败事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_NFC_LOCK_FAIL                = 0x004Du,      /**>  电子围栏外刷卡施封失败事件     0x00（普通） */
+    // //密码
+    // HHD_EV_NO_VALID_PASSWORD_UNLOCK_FAIL         = 0x0034u,      /**>  电子围栏内非有效密码，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_PASSWORD_LOCK_FAIL           = 0x0035u,      /**>  电子围栏内非有效密码，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_PASSWORD_UNLOCK_FAIL    = 0x0036u,      /**>  电子围栏内非有效截止日期密码，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_PASSWORD_LOCK_FAIL      = 0x0037u,      /**>  电子围栏内非有效截止日期密码，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_PASSWORD_UNLOCK_FAIL = 0x0038u,/**>  电子围栏内非有效时间区间密码，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_PASSWORD_LOCK_FAIL = 0x0039u,  /**>  电子围栏内非有效时间区间密码，施封失败事件     0x00（普通） */
+    // HHD_EV_IN_AREA_PASSWORD_UNLOCK_SUCCESS       = 0x004Eu,      /**>  电子围栏内密码解封成功事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_PASSWORD_UNLOCK_FAIL          = 0x004Fu,      /**>  电子围栏外密码解封失败事件     0x00（普通） */
+    // HHD_EV_IN_AREA_PASSWORD_LOCK_SUCCESS         = 0x0114u,        /**>  电子围栏内密码施封成功事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_PASSWORD_LOCK_FAIL           = 0x0115u,        /**>  电子围栏外密码施封失败事件     0x00（普通） */
+    // //SMS
+    // HHD_EV_NO_VALID_SMS_UNLOCK_FAIL              = 0x003au,      /**>  电子围栏内非有效SMS参数，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_SMS_LOCK_FAIL                = 0x003bu,      /**>  电子围栏内非有效SMS参数，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_SMS_UNLOCK_FAIL         = 0x003cu,      /**>  电子围栏非有效截止日期SMS，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_SMS_LOCK_FAIL           = 0x003du,      /**>  电子围栏非有效截止日期SMS，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_SMS_UNLOCK_FAIL = 0x003eu,     /**>  电子围栏非有效时间区间SMS，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_SMS_LOCK_FAIL  = 0x003fu,      /**>  电子围栏非有效时间区间SMS，施封失败事件     0x00（普通） */
+    // HHD_EV_IN_AREA_SMS_LOCK_SUCCESS              = 0x0100u,      /**>  电子围栏内SMS施封成功事件     0x00（普通） */
+    // HHD_EV_IN_AREA_SMS_UNLOCK_SUCCESS            = 0x0101u,      /**>  电子围栏内SMS解封成功事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_SMS_LOCK_FAIL                = 0x0102u,      /**>  电子围栏外SMS施封失败事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_SMS_UNLOCK_FAIL              = 0x0103u,      /**>  电子围栏外SMS解封失败事件     0x00（普通） */
+    // //BLE
+    // HHD_EV_NO_VALID_BLE_UNLOCK_FAIL              = 0x0040u,      /**>  电子围栏内非有效BLE参数，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_BLE_LOCK_FAIL                = 0x0041u,      /**>  电子围栏内非有效BLE参数，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_BLE_UNLOCK_FAIL         = 0x0042u,      /**>  电子围栏非有效截止日期BLE，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_BLE_LOCK_FAIL           = 0x0043u,      /**>  电子围栏非有效截止日期BLE，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_BLE_UNLOCK_FAIL = 0x0044u,     /**>  电子围栏非有效时间区间BLE，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_BLE_LOCK_FAIL  = 0x0045u,      /**>  电子围栏非有效时间区间BLE，施封失败事件     0x00（普通） */
+    // HHD_EV_IN_AREA_BLE_LOCK_SUCCESS              = 0x0104u,      /**>  电子围栏内蓝牙施封成功事件     0x00（普通） */
+    // HHD_EV_IN_AREA_BLE_UNLOCK_SUCCESS            = 0x0105u,      /**>  电子围栏内蓝牙解封成功事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_BLE_UNLOCK_FAIL              = 0x0106u,      /**>  电子围栏外蓝牙解封失败事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_BLE_LOCK_FAIL                = 0x0107u,      /**>  电子围栏外蓝牙施封失败事件     0x00（普通） */
 
-    //平台（远程）
-    HHD_EV_NO_VALID_PLATFORM_UNLOCK_FAIL              = 0x0108u,      /**>  电子围栏内非有效平台参数，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_PLATFORM_LOCK_FAIL                = 0x0109u,      /**>  电子围栏内非有效平台参数，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_PLATFORM_UNLOCK_FAIL         = 0x010Au,      /**>  电子围栏非有效截止日期平台，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_PLATFORM_LOCK_FAIL           = 0x010Bu,      /**>  电子围栏非有效截止日期平台，施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_PLATFORM_UNLOCK_FAIL = 0x010Cu,     /**>  电子围栏非有效时间区间平台，解封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_PLATFORM_LOCK_FAIL  = 0x010Du,      /**>  电子围栏非有效时间区间平台，施封失败事件     0x00（普通） */
-    HHD_EV_IN_AREA_PLATFORM_LOCK_SUCCESS              = 0x010Eu,      /**>  电子围栏内远程施封成功事件     0x00（普通） */
-    HHD_EV_IN_AREA_PLATFORM_UNLOCK_SUCCESS            = 0x010Fu,      /**>  电子围栏内远程解封成功事件     0x00（普通） */
-    HHD_EV_OUT_AREA_PLATFORM_UNLOCK_FAIL              = 0x0110u,      /**>  电子围栏外远程解封失败事件     0x00（普通） */
-    HHD_EV_OUT_AREA_PLATFORM_LOCK_FAIL                = 0x0111u,      /**>  电子围栏外远程施封失败事件     0x00（普通） */
+    // //平台（远程）
+    // HHD_EV_NO_VALID_PLATFORM_UNLOCK_FAIL              = 0x0108u,      /**>  电子围栏内非有效平台参数，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_PLATFORM_LOCK_FAIL                = 0x0109u,      /**>  电子围栏内非有效平台参数，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_PLATFORM_UNLOCK_FAIL         = 0x010Au,      /**>  电子围栏非有效截止日期平台，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_PLATFORM_LOCK_FAIL           = 0x010Bu,      /**>  电子围栏非有效截止日期平台，施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_PLATFORM_UNLOCK_FAIL = 0x010Cu,     /**>  电子围栏非有效时间区间平台，解封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_PLATFORM_LOCK_FAIL  = 0x010Du,      /**>  电子围栏非有效时间区间平台，施封失败事件     0x00（普通） */
+    // HHD_EV_IN_AREA_PLATFORM_LOCK_SUCCESS              = 0x010Eu,      /**>  电子围栏内远程施封成功事件     0x00（普通） */
+    // HHD_EV_IN_AREA_PLATFORM_UNLOCK_SUCCESS            = 0x010Fu,      /**>  电子围栏内远程解封成功事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_PLATFORM_UNLOCK_FAIL              = 0x0110u,      /**>  电子围栏外远程解封失败事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_PLATFORM_LOCK_FAIL                = 0x0111u,      /**>  电子围栏外远程施封失败事件     0x00（普通） */
 
-    //触摸
-    HHD_EV_NO_VALID_TIME_TOUCH_LOCK_FAIL           = 0x0046u,      /**>  围栏截止日期后触摸施封失败事件     0x00（普通） */
-    HHD_EV_NO_VALID_TIME_INTERVAL_TOUCH_LOCK_FAIL  = 0x0047u,      /**>  非有效围栏时间触摸施封失败事件     0x00（普通） */
-    HHD_EV_IN_AREA_TOUCH_LOCK_SUCCESS              = 0x0112u,      /**>  电子围栏内触摸施封成功事件     0x00（普通） */
-    HHD_EV_OUT_AREA_TOUCH_LOCK_FAIL                = 0x0113u,      /**>  电子围栏外触摸施封失败事件     0x00（普通） */
+    // //触摸
+    // HHD_EV_NO_VALID_TIME_TOUCH_LOCK_FAIL           = 0x0046u,      /**>  围栏截止日期后触摸施封失败事件     0x00（普通） */
+    // HHD_EV_NO_VALID_TIME_INTERVAL_TOUCH_LOCK_FAIL  = 0x0047u,      /**>  非有效围栏时间触摸施封失败事件     0x00（普通） */
+    // HHD_EV_IN_AREA_TOUCH_LOCK_SUCCESS              = 0x0112u,      /**>  电子围栏内触摸施封成功事件     0x00（普通） */
+    // HHD_EV_OUT_AREA_TOUCH_LOCK_FAIL                = 0x0113u,      /**>  电子围栏外触摸施封失败事件     0x00（普通） */
 
-    //子锁围栏事件
-    //远程
-    HHD_EV_SUBLOCK_UNVALID_PLATFORM_UNLOCK_FAIL  = 0x0116u,               /**>  子锁非有效围栏经主网关远程参数解封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_PLATFORM_LOCK_FAIL    = 0x0117u,               /**>  子锁非有效围栏经主网关远程参数施封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_PLATFORM_TIME_UNLOCK_FAIL     = 0x0118u,       /**>  子锁围栏截止日期后经主网关远程解封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_PLATFORM_TIME_LOCK_FAIL       = 0x0119u,       /**>  子锁围栏截止日期后经主网关远程施封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_PLATFORM_UNLOCK_FAIL = 0x011Au,    /**>  子锁非有效围栏时间经主网关远程解封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_PLATFORM_LOCK_FAIL   = 0x011Bu,    /**>  子锁非有效围栏时间经主网关远程施封失败事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_PLATFORM_UNLOCK_FAIL = 0x011Cu,               /**>  子锁电子围栏外经主网关远程解封失败事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_PLATFORM_LOCK_FAIL   = 0x011Eu,               /**>  子锁电子围栏外经主网关远程施封失败事件 */
-    HHD_EV_SUBLOCK_IN_AREA_PLATFORM_UNLOCK_SUCCESS = 0x0145u,             /**>  子锁电子围栏内经主网关远程解封成功事件 */
-    HHD_EV_SUBLOCK_IN_AREA_PLATFORM_LOCK_SUCCESS = 0x0146u,               /**>  子锁电子围栏内经主网关远程施封成功事件 */
+    // //子锁围栏事件
+    // //远程
+    // HHD_EV_SUBLOCK_UNVALID_PLATFORM_UNLOCK_FAIL  = 0x0116u,               /**>  子锁非有效围栏经主网关远程参数解封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_PLATFORM_LOCK_FAIL    = 0x0117u,               /**>  子锁非有效围栏经主网关远程参数施封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_PLATFORM_TIME_UNLOCK_FAIL     = 0x0118u,       /**>  子锁围栏截止日期后经主网关远程解封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_PLATFORM_TIME_LOCK_FAIL       = 0x0119u,       /**>  子锁围栏截止日期后经主网关远程施封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_PLATFORM_UNLOCK_FAIL = 0x011Au,    /**>  子锁非有效围栏时间经主网关远程解封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_PLATFORM_LOCK_FAIL   = 0x011Bu,    /**>  子锁非有效围栏时间经主网关远程施封失败事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_PLATFORM_UNLOCK_FAIL = 0x011Cu,               /**>  子锁电子围栏外经主网关远程解封失败事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_PLATFORM_LOCK_FAIL   = 0x011Eu,               /**>  子锁电子围栏外经主网关远程施封失败事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_PLATFORM_UNLOCK_SUCCESS = 0x0145u,             /**>  子锁电子围栏内经主网关远程解封成功事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_PLATFORM_LOCK_SUCCESS = 0x0146u,               /**>  子锁电子围栏内经主网关远程施封成功事件 */
 
-    //BLE
-    HHD_EV_SUBLOCK_UNVALID_BLE_UNLOCK_FAIL             = 0x011Fu,         /**>  子锁非有效围栏经主网关BLE参数解封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_BLE_LOCK_FAIL               = 0x0120u,         /**>  子锁非有效围栏经主网关BLE参数施封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_BLE_TIME_UNLOCK_FAIL        = 0x0121u,         /**>  子锁围栏截止日期后经主网关BLE解封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_BLE_TIME_LOCK_FAIL          = 0x0122u,         /**>  子锁围栏截止日期后经主网关BLE施封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_BLE_UNLOCK_FAIL = 0x0123u,         /**>  子锁非有效围栏时间经主网关蓝牙解封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_BLE_LOCK_FAIL   = 0x0124u,         /**>  子锁非有效围栏时间经主网关蓝牙施封失败事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_BLE_UNLOCK_FAIL            = 0x0125u,         /**>  子锁电子围栏外经主网关蓝牙解封失败事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_BLE_LOCK_FAIL              = 0x0126u,         /**>  子锁电子围栏外经主网关蓝牙施封失败事件 */
-    HHD_EV_SUBLOCK_IN_AREA_BLE_UNLOCK_SUCCESS          = 0x0147u,         /**>  子锁电子围栏内经主网关蓝牙解封成功事件 */
-    HHD_EV_SUBLOCK_IN_AREA_BLE_LOCK_SUCCESS            = 0x0148u,         /**>  子锁电子围栏外经主网关蓝牙施封成功事件 */
+    // //BLE
+    // HHD_EV_SUBLOCK_UNVALID_BLE_UNLOCK_FAIL             = 0x011Fu,         /**>  子锁非有效围栏经主网关BLE参数解封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_BLE_LOCK_FAIL               = 0x0120u,         /**>  子锁非有效围栏经主网关BLE参数施封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_BLE_TIME_UNLOCK_FAIL        = 0x0121u,         /**>  子锁围栏截止日期后经主网关BLE解封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_BLE_TIME_LOCK_FAIL          = 0x0122u,         /**>  子锁围栏截止日期后经主网关BLE施封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_BLE_UNLOCK_FAIL = 0x0123u,         /**>  子锁非有效围栏时间经主网关蓝牙解封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_BLE_LOCK_FAIL   = 0x0124u,         /**>  子锁非有效围栏时间经主网关蓝牙施封失败事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_BLE_UNLOCK_FAIL            = 0x0125u,         /**>  子锁电子围栏外经主网关蓝牙解封失败事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_BLE_LOCK_FAIL              = 0x0126u,         /**>  子锁电子围栏外经主网关蓝牙施封失败事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_BLE_UNLOCK_SUCCESS          = 0x0147u,         /**>  子锁电子围栏内经主网关蓝牙解封成功事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_BLE_LOCK_SUCCESS            = 0x0148u,         /**>  子锁电子围栏外经主网关蓝牙施封成功事件 */
 
-    //密码
-    HHD_EV_SUBLOCK_UNVALID_PASSWORD_UNLOCK_FAIL             = 0x0127u,         /**>  子锁非有效围栏经主网关密码解封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_PASSWORD_LOCK_FAIL               = 0x0128u,         /**>  子锁非有效围栏经主网关密码施封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_PASSWORD_TIME_UNLOCK_FAIL        = 0x0129u,         /**>  子锁围栏截止日期后经主网关密码解封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_PASSWORD_TIME_LOCK_FAIL          = 0x012Au,         /**>  子锁围栏截止日期后经主网关密码施封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_PASSWORD_UNLOCK_FAIL = 0x012Bu,         /**>  子锁非有效围栏时间经主网关密码解封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_PASSWORD_LOCK_FAIL   = 0x012Cu,         /**>  子锁非有效围栏时间经主网关密码施封失败事件 */
-    HHD_EV_SUBLOCK_IN_AREA_PASSWORD_UNLOCK_SUCCESS          = 0x012Du,         /**>  子锁电子围栏内经主网关密码解封成功事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_PASSWORD_UNLOCK_FAIL            = 0x012Eu,         /**>  子锁电子围栏外经主网关密码解封失败事件 */
-    HHD_EV_SUBLOCK_IN_AREA_PASSWORD_LOCK_SUCCESS            = 0x012Fu,         /**>  子锁电子围栏内经主网关密码施封成功事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_PASSWORD_LOCK_FAIL              = 0x0130u,         /**>  子锁电子围栏外经主网关密码施封失败事件 */
+    // //密码
+    // HHD_EV_SUBLOCK_UNVALID_PASSWORD_UNLOCK_FAIL             = 0x0127u,         /**>  子锁非有效围栏经主网关密码解封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_PASSWORD_LOCK_FAIL               = 0x0128u,         /**>  子锁非有效围栏经主网关密码施封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_PASSWORD_TIME_UNLOCK_FAIL        = 0x0129u,         /**>  子锁围栏截止日期后经主网关密码解封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_PASSWORD_TIME_LOCK_FAIL          = 0x012Au,         /**>  子锁围栏截止日期后经主网关密码施封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_PASSWORD_UNLOCK_FAIL = 0x012Bu,         /**>  子锁非有效围栏时间经主网关密码解封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_PASSWORD_LOCK_FAIL   = 0x012Cu,         /**>  子锁非有效围栏时间经主网关密码施封失败事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_PASSWORD_UNLOCK_SUCCESS          = 0x012Du,         /**>  子锁电子围栏内经主网关密码解封成功事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_PASSWORD_UNLOCK_FAIL            = 0x012Eu,         /**>  子锁电子围栏外经主网关密码解封失败事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_PASSWORD_LOCK_SUCCESS            = 0x012Fu,         /**>  子锁电子围栏内经主网关密码施封成功事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_PASSWORD_LOCK_FAIL              = 0x0130u,         /**>  子锁电子围栏外经主网关密码施封失败事件 */
 
-    //刷卡
-    HHD_EV_SUBLOCK_UNVALID_NFC_TIME_UNLOCK_FAIL        = 0x0131u,         /**>  子锁围栏截止日期后经主网关NFC解封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_NFC_TIME_LOCK_FAIL          = 0x0132u,         /**>  子锁围栏截止日期后经主网关NFC施封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_NFC_UNLOCK_FAIL = 0x0133u,         /**>  子锁非有效围栏时间经主网关NFC解封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_NFC_LOCK_FAIL   = 0x0134u,         /**>  子锁非有效围栏时间经主网关NFC施封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_NFC_LOCK_FAIL               = 0x0135u,         /**>  子锁非有效围栏卡经主网关NFC施封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_NFC_UNLOCK_FAIL             = 0x0136u,         /**>  子锁非有效围栏卡经主网关NFC解封失败事件 */
-    HHD_EV_SUBLOCK_IN_AREA_NFC_UNLOCK_SUCCESS          = 0x0137u,         /**>  子锁电子围栏内经主网关NFC解封成功事件 */
-    HHD_EV_SUBLOCK_IN_AREA_NFC_LOCK_SUCCESS            = 0x0138u,         /**>  子锁电子围栏内经主网关NFC施封成功事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_NFC_UNLOCK_FAIL            = 0x0139u,         /**>  子锁电子围栏外经主网关NFC解封失败事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_NFC_LOCK_FAIL              = 0x013Au,         /**>  子锁电子围栏外经主网关NFC施封失败事件 */
+    // //刷卡
+    // HHD_EV_SUBLOCK_UNVALID_NFC_TIME_UNLOCK_FAIL        = 0x0131u,         /**>  子锁围栏截止日期后经主网关NFC解封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_NFC_TIME_LOCK_FAIL          = 0x0132u,         /**>  子锁围栏截止日期后经主网关NFC施封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_NFC_UNLOCK_FAIL = 0x0133u,         /**>  子锁非有效围栏时间经主网关NFC解封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_NFC_LOCK_FAIL   = 0x0134u,         /**>  子锁非有效围栏时间经主网关NFC施封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_NFC_LOCK_FAIL               = 0x0135u,         /**>  子锁非有效围栏卡经主网关NFC施封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_NFC_UNLOCK_FAIL             = 0x0136u,         /**>  子锁非有效围栏卡经主网关NFC解封失败事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_NFC_UNLOCK_SUCCESS          = 0x0137u,         /**>  子锁电子围栏内经主网关NFC解封成功事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_NFC_LOCK_SUCCESS            = 0x0138u,         /**>  子锁电子围栏内经主网关NFC施封成功事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_NFC_UNLOCK_FAIL            = 0x0139u,         /**>  子锁电子围栏外经主网关NFC解封失败事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_NFC_LOCK_FAIL              = 0x013Au,         /**>  子锁电子围栏外经主网关NFC施封失败事件 */
 
-    //sms
-    HHD_EV_SUBLOCK_UNVALID_SMS_LOCK_FAIL               = 0x013Bu,         /**>  子锁非有效围栏SMS参数经主网关SMS施封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_SMS_UNLOCK_FAIL             = 0x013Cu,         /**>  子锁非有效围栏SMS参数经主网关SMS解封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_SMS_TIME_UNLOCK_FAIL        = 0x013Du,         /**>  子锁围栏截止日期后经主网关SMS解封失败事件 */
-    HHD_EV_SUBLOCK_UNVALID_SMS_TIME_LOCK_FAIL          = 0x013Eu,         /**>  子锁围栏截止日期后经主网关SMS施封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_SMS_UNLOCK_FAIL = 0x013Fu,         /**>  子锁非有效围栏时间经主网关SMS解封失败事件 */
-    HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_SMS_LOCK_FAIL   = 0x0140u,         /**>  子锁非有效围栏时间经主网关SMS施封失败事件 */
-    HHD_EV_SUBLOCK_IN_AREA_SMS_LOCK_SUCCESS            = 0x0141u,         /**>  子锁电子围栏内经主网关SMS施封成功事件 */
-    HHD_EV_SUBLOCK_IN_AREA_SMS_UNLOCK_SUCCESS          = 0x0142u,         /**>  子锁电子围栏内经主网关SMS解封成功事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_SMS_LOCK_FAIL              = 0x0143u,         /**>  子锁电子围栏外经主网关SMS施封失败事件 */
-    HHD_EV_SUBLOCK_OUT_AREA_SMS_UNLOCK_FAIL            = 0x0144u,         /**>  子锁电子围栏外经主网关SMS解封失败事件 */
+    // //sms
+    // HHD_EV_SUBLOCK_UNVALID_SMS_LOCK_FAIL               = 0x013Bu,         /**>  子锁非有效围栏SMS参数经主网关SMS施封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_SMS_UNLOCK_FAIL             = 0x013Cu,         /**>  子锁非有效围栏SMS参数经主网关SMS解封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_SMS_TIME_UNLOCK_FAIL        = 0x013Du,         /**>  子锁围栏截止日期后经主网关SMS解封失败事件 */
+    // HHD_EV_SUBLOCK_UNVALID_SMS_TIME_LOCK_FAIL          = 0x013Eu,         /**>  子锁围栏截止日期后经主网关SMS施封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_SMS_UNLOCK_FAIL = 0x013Fu,         /**>  子锁非有效围栏时间经主网关SMS解封失败事件 */
+    // HHD_EV_SUBLOCK_VALID_TIME_INTERVAL_SMS_LOCK_FAIL   = 0x0140u,         /**>  子锁非有效围栏时间经主网关SMS施封失败事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_SMS_LOCK_SUCCESS            = 0x0141u,         /**>  子锁电子围栏内经主网关SMS施封成功事件 */
+    // HHD_EV_SUBLOCK_IN_AREA_SMS_UNLOCK_SUCCESS          = 0x0142u,         /**>  子锁电子围栏内经主网关SMS解封成功事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_SMS_LOCK_FAIL              = 0x0143u,         /**>  子锁电子围栏外经主网关SMS施封失败事件 */
+    // HHD_EV_SUBLOCK_OUT_AREA_SMS_UNLOCK_FAIL            = 0x0144u,         /**>  子锁电子围栏外经主网关SMS解封失败事件 */
     
-    //传感器报警事件
-    HHD_EV_SMOKE_ALARM = 0x0200,                           /**>  烟雾报警事件 */
-    HHD_EV_WATER_ALARM = 0x0201,                           /**>  水浸告警事件 */
-    HHD_EV_HIGH_TEMPERATURE_ALARM = 0x0202,                /**>  温度过高告警事件 */
+    // //传感器报警事件
+    // HHD_EV_SMOKE_ALARM = 0x0200,                           /**>  烟雾报警事件 */
+    // HHD_EV_WATER_ALARM = 0x0201,                           /**>  水浸告警事件 */
+    // HHD_EV_HIGH_TEMPERATURE_ALARM = 0x0202,                /**>  温度过高告警事件 */
 
-    //设备自身发生的事件
-    HHD_EV_REMOTE_OPEN_DOOR_SUCCESS = 0x0220,              /**>  远程开箱门成功事件 */
-    HHD_EV_CLOSE_DOOR = 0x0221,                            /**>  关箱门事件 */
-    HHD_EV_BIND_BOX_LOCK = 0x0222,                         /**>  箱子与电子锁绑定事件（还锁事件） */
-    HHD_EV_UNBIND_BOX_LOCK = 0x0223,                       /**>  箱子与电子锁解绑事件（借锁事件） */
-    HHD_EV_BLUETOOTH_OPEN_DOOR_SUCCESS = 0x0224,           /**>  蓝牙开箱门成功事件 */
-    HHD_EV_TRIGGER_REPORT_LATEST_STATUS = 0x0225,          /**>  触发柜子上报最新状态事件 */
-    HHD_EV_DOOR_OPEN = 0x0226,                             /**>  箱门打开事件 */
+    // //设备自身发生的事件
+    // HHD_EV_REMOTE_OPEN_DOOR_SUCCESS = 0x0220,              /**>  远程开箱门成功事件 */
+    // HHD_EV_CLOSE_DOOR = 0x0221,                            /**>  关箱门事件 */
+    // HHD_EV_BIND_BOX_LOCK = 0x0222,                         /**>  箱子与电子锁绑定事件（还锁事件） */
+    // HHD_EV_UNBIND_BOX_LOCK = 0x0223,                       /**>  箱子与电子锁解绑事件（借锁事件） */
+    // HHD_EV_BLUETOOTH_OPEN_DOOR_SUCCESS = 0x0224,           /**>  蓝牙开箱门成功事件 */
+    // HHD_EV_TRIGGER_REPORT_LATEST_STATUS = 0x0225,          /**>  触发柜子上报最新状态事件 */
+    // HHD_EV_DOOR_OPEN = 0x0226,                             /**>  箱门打开事件 */
 
-    //运维事件
-    HHD_EV_REMOTE_OPEN_ALL_BOXES = 0x0227,                 /**>  远程一键开所有箱子操作事件 */
-    HHD_EV_BLUETOOTH_OPEN_ALL_BOXES = 0x0228,              /**>  蓝牙一键开所有箱子操作事件 */
-    HHD_EV_PCB_OPEN_ALL_BOXES = 0x0229,                    /**>  PCB一键开所有箱子操作事件 */
-    HHD_EV_PHYSICAL_EMERGENCY_OPEN_BOX = 0x022A,           /**>  物理应急开箱事件 */
+    // //运维事件
+    // HHD_EV_REMOTE_OPEN_ALL_BOXES = 0x0227,                 /**>  远程一键开所有箱子操作事件 */
+    // HHD_EV_BLUETOOTH_OPEN_ALL_BOXES = 0x0228,              /**>  蓝牙一键开所有箱子操作事件 */
+    // HHD_EV_PCB_OPEN_ALL_BOXES = 0x0229,                    /**>  PCB一键开所有箱子操作事件 */
+    // HHD_EV_PHYSICAL_EMERGENCY_OPEN_BOX = 0x022A,           /**>  物理应急开箱事件 */
 
-    HHD_EV_CAPTURE_VIDEO = 0x00B0u,      /**>  远程捉拍/捉录短视频事件 */   
+    // HHD_EV_CAPTURE_VIDEO = 0x00B0u,      /**>  远程捉拍/捉录短视频事件 */   
 } hhd_event_type_t;
 
 typedef enum hhd_event_level
@@ -698,32 +709,6 @@ typedef struct jt808_connection {
 } jt808_connection_t;
 
 
-typedef union jt808_msg_item_data {
-	BYTE  d_byte;
-	WORD  d_word;
-	DWORD d_dword;
-
-	struct {
-	    WORD len;
-	    const char * data;
-	} d_string;
-
-	struct {
-	    WORD len;
-		const BYTE *data;
-	} d_bytes;
-
-	struct {
-		WORD count;
-		const WORD *data;
-	} d_word_arr;
-} jt808_msg_item_data_t;
-
-typedef struct jt808_msg_value {
-	short id;			//消息ID
-	short type;			//消息类型
-	jt808_msg_item_data_t value;			//消息值
-} jt808_msg_value_t;
 
 typedef struct jt808_msg_fields_data {
     jt808_encrypt_type_t  encrypt_type;			//加密类型，枚举
@@ -855,7 +840,7 @@ typedef struct {
     jt808_msg_config_t jt808_config;
     char host[50];
     char scheme[16];
-    short port;
+    int port;
     bool auto_reconnect;
     void *user_context;
     int network_timeout_ms;
@@ -945,13 +930,25 @@ class Jt808 {
 public:
     Jt808();
     ~Jt808();
-    int jt808_init();
-    void SetIsSend(bool send);
 
+    Packag packag;
+
+
+
+    int jt808_init();
+    void Set_message_type(uint8_t type, uint8_t is_resp);
+    bool updateDirectionStatus(int client_fd, uint8_t direction, uint8_t status);
+
+    void pack_jt808_0316(string msgBody);
+    
+    
 private:
+
+    int get_chipid();
+
     int process_upload_location(sys_ipc_message_t * msg); //上报808数据
     int jt808_process_receive(jt808_client_handle_t client);//接收下方的808数据
-    int jt808_connect(jt808_client_handle_t client, int flag);
+    int jt808_connect(jt808_client_handle_t client);
     void func_sendthread();
     void func_recvthread();
 
@@ -962,15 +959,11 @@ private:
     uint8_t jt808_msg_get_ver(const uint8_t *data, int len);
     WORD jt808_msg_get_msgid(const uint8_t *data, int len);
     WORD jt808_msg_get_msgsn(const uint8_t *data, int len);
-    int jt808_value_set_dword(jt808_msg_value_t *value, uint8_t id, DWORD v);
-    int jt808_value_set_word(jt808_msg_value_t *value, uint8_t id, WORD v);
-    int jt808_value_set_bytes(jt808_msg_value_t *value, uint8_t id, BYTE *v, int len);
+
     const char *hhd_os_get_time_yymmddhhmmss_from_ts(char *datetime, int time_zone, hhd_os_time_t timestamp);
     const char *hhd_os_get_time_yymmddhhmmss(char *datetime, int time_zone);
     const jt808_msg_config_t * package_get_jt808_config(jt808_send_channel_type_t send_channel, jt808_encrypt_type_t encrypt_type);
     void jt808_msg_init(jt808_connection_t *connection, const jt808_msg_config_t *config, uint8_t *buffer, size_t buffer_length);
-    int jt808_value_set_string(jt808_msg_value_t *value, uint8_t id, const char * v);
-    int jt808_value_set_byte(jt808_msg_value_t *value, uint8_t id, BYTE v);
     int bsp_io_state_get_state(bsp_io_state_id_t state_id);
     int buffer_append_byte(uint8_t *buffer, uint8_t v);
     int buffer_append_dword(uint8_t *buffer, uint32_t v);
@@ -1006,17 +999,33 @@ private:
     int jt808_pack_message_fix_fields(jt808_connection_t *connection, const jt808_msg_define_t *msg_def, jt808_msg_value_t *values, int value_count);
     int jt808_pack_message_ext_fields(jt808_connection_t *connection, const jt808_msg_define_t *msg_def, jt808_msg_value_t *values, int value_count);
     jt808_message_t * jt808_pack_message(jt808_connection_t *connection, const jt808_msg_define_t *msg_def, jt808_msg_fields_data_t *data, WORD * out_msg_sn);
+    jt808_message_t * jt808_pack_message(jt808_connection_t *connection, const jt808_msg_define_t *msg_def, string &data, WORD * out_msg_sn);
     jt808_msg_define_t *jt808_get_msg_define(uint16_t msg_id);
 
 
     int pack_common_build_state_bits(DWORD * sate_bits);
     int hhd_event_get_ext_info(const hhd_event_log_t *evlog, uint8_t *data, uint16_t max_size);
 
+
+    int send_jt808_message(uint8_t *buffer,size_t buffer_length);
+
+
     int pack_jt808_0200(package_t *package, uint8_t *out_data, uint16_t out_data_size, hhd_event_log_t *event, jt808_send_channel_type_t send_channel, jt808_encrypt_type_t encrypt_type);
+    
+    
+    
+    void send_0311(uint8_t *msgBody);
+    void send_0313(uint8_t *msgBody);
+    void send_0315(uint8_t *msgBody);
+    void send_0317(uint8_t *msgBody);
+  
     int pack_common_build_warn_bits(DWORD * warn_bits);
     
+    char G_CHIPID_STR[13] = {0};
+    //unsigned char G_CHIPID_HEX[CHIPID_LENGTH / 2 + 1] = {0};
     
-    
+  
+   
     // - 0002 心跳报文定义
     static jt808_msg_define_t jt808_msg_term_hreartbreat;
     // - 0200 固定字段
@@ -1030,6 +1039,20 @@ private:
     state_gnss_t g_state_gps_info;
     Sensor_data g_sensor_data;
 
+   
+    static jt808_msg_define_t jt808_msg_parameter_definition_0311; //终端参数设置应答定义 0311
+    //static jt808_msg_item_define_t jt808_msg_terminal_parameter_fields[];
+
+    static jt808_msg_define_t jt808_msg_parameter_definition_0313; //终端参数查询应答定义 0313
+    static jt808_msg_item_define_t jt808_msg_terminal_setparameter_fields[];
+
+    static jt808_msg_define_t jt808_msg_parameter_definition_0315; //平台下发指令应答定义 0315
+    static jt808_msg_item_define_t jt808_msg_terminal_platform_fields[];
+    
+
+    static jt808_msg_define_t jt808_msg_parameter_definition_0316; //上报平台指令定义 0316
+    static jt808_msg_item_define_t jt808_msg_terminal_report_platform_fields[];
+
 
     hhd_box_data_t g_box_list[10] = {0};
     uint8_t g_box_number = 10; // HHD_SUBLOCK_BOX_NUM_MAX;
@@ -1041,16 +1064,18 @@ private:
     unsigned char g_status_rest  = 0;				  // 运动传感器状态-----0：运动状态; 1:静止状态
     uint8_t g_sim_card_id        = 1;           // 0:缺省;  01:当前sim卡1;  10:当前sim卡2
     uint32_t  g_io_state = 0u;
-    std::mutex mutex; // 互斥锁
+    std::mutex status_mutex_; // 互斥锁
+    unordered_map<int, uint16_t> client_direction_status_;
 
     jt808_client_handle_t client;
     sys_ipc_message_t *msg_recved;
     uint8_t g_process_buffer[SYS_IPC_MESSAGE_MAX_SIZE];
 
+    
+
+
     std::thread send_thread; //上报报文线程
     std::thread recv_thread; //接收报文线程
-
-    bool IsSend =NULL;
 
     /*!
     * @brief 检测是否触发防剪报警
@@ -1166,8 +1191,7 @@ private:
         { .bit = HLINK_WARN_SPEED           ,   .check_fun = sys_warn_check_speed },
         { .bit = HLINK_WARN_PARKING_TIMEOUT,  .check_fun = sys_warn_check_chaoshi },
         { .bit = HLINK_WARN_POWER           ,   .check_fun = sys_warn_check_main_power_lost }
-};
-;
+    };
 
 };
 #endif

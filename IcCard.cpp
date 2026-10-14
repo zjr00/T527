@@ -1,6 +1,9 @@
 #include "IcCard.h"
 #include "Public.h"
 #include "config.h"
+
+
+/*功能：IC卡刷卡*/
 IcCard::IcCard()
 {
     if (Config::Get("SystemDeviceSet","IcCard") == "1") {

@@ -9,19 +9,30 @@
 #include "config.h"
 
 using namespace std;
+
+
+/*功能：道闸*/
+
 gate::gate()
 {
     frontGateOpen =false; //入口道闸状态
     rearGateOpen=false; //出口道闸状态
     vehicleDetected=false; //识别区域是否有车
-    bool created = std::filesystem::create_directories(Config::Get("Path","Tmp"));
-    if (created) {
-        std::cout << "Directory created: " <<Config::Get("Path","Tmp")<< std::endl;
-    }
+    // bool created = std::filesystem::create_directories(Config::Get("Path","Tmp"));
+    // if (created) {
+    //     std::cout << "Directory created: " <<Config::Get("Path","Tmp")<< std::endl;
+    // }
+
+    
 }
 
 gate::~gate()
 {
+}
+
+int gate::Gate_Init()
+{
+    return 0;
 }
 
 //处理入口车辆进入
@@ -52,7 +63,6 @@ void gate::processExit()
 void gate::openFrontGate()
 {
     printf("开启入口道闸\n");
-    NetUnLock();
     frontGateOpen =true;
     vehicleDetected =true;
 }
@@ -76,29 +86,6 @@ void gate::closeRearGate()
 {
     printf("关闭出口道闸\n");
     frontGateOpen =false;
-}
-
-void gate::NetUnLock()
-{
-    reader.TCPConnect("192.168.30.198",8075);
-
-    reader.NetUnsealLock();
-    reader.close_sock();
-}
-
-string gate::GetIPC_Path(string direction)
-{
-    string folder_name = Config::GetTime_Path();
-    folder_name+= Swith_IPC(direction);
-
-    std::cout << "ipc path : " << folder_name << std::endl;
-    //先创建日期文件夹
-    bool created = std::filesystem::create_directories(folder_name);
-    if (created) {
-        std::cout << "Directory created: " << folder_name << std::endl;
-    }
-
-    return folder_name;
 }
 
 string gate::Swith_IPC(string direction)

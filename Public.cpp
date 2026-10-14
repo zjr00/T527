@@ -81,7 +81,7 @@ int Public::ReceiveDataThread()
         bytes_received = recv(sSocket, buffer, sizeof(buffer), 0);  
         if (bytes_received > 0)
         {
-            Config::Show(buffer,"红外数据");
+            //Config::Show(buffer,"红外数据");
             GetCapState(buffer);
         }
         else if(bytes_received == -1)
@@ -122,14 +122,14 @@ void Public::Init()
 		m_SystemDeviceSet |= 0x10;
 	}
 
-	cout<<"m_SystemDeviceSet"<<m_SystemDeviceSet<<endl;
-	Public::AddValueGatherInfo("Radar","");
+	//cout<<"m_SystemDeviceSet"<<m_SystemDeviceSet<<endl;
+	//Public::AddValueGatherInfo("Radar","");
 }
 
 void Public::AddValueGatherInfo(string key, string value)
 {
    
-    if (key == "VE_NAME" || key == "Radar") {
+    if (key == "Radar") {
 		if (m_SystemDeviceSet & 0x04) //开始读取地磅数据
 		{
 			isReadWeigh = true;
@@ -164,7 +164,7 @@ void Public::AddValueGatherInfo(string key, string value)
 
 void Public::GetCapState(unsigned char * onePack)
 {
-    Config::Show(onePack,"红外数据2：");
+    //Config::Show(onePack,"红外数据2：");
     A1 = *(onePack+10 + (m_cb_A1*2-2));
     A2 = *(onePack+10 + (m_cb_A2*2-2));
     B1 = *(onePack+10 + (m_cb_B1*2-2));

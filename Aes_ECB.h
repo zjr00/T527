@@ -120,19 +120,23 @@ private:
     //密钥扩展
     int keyExpansion(const uint8_t *key, uint32_t keyLen, AesKey *aesKey);
 
-    int Str2Hex(char * strSrc, unsigned char* hexData);
-
+    
     char HexChar(char c);
+
+    
 public:
     Aes_ECB();
     ~Aes_ECB();
      //加密
-    int aesEncrypt(const uint8_t *input, uint8_t *key,uint8_t *ct);
+    int aesEncrypt(const uint8_t *input, uint32_t inputLen,uint8_t *key,uint8_t *ct);
 
     //解密 
     int aesDecrypt(const uint8_t *key, const uint8_t *ct, uint8_t *pt);
 
     void Cropping(unsigned char *lockData, unsigned char *savaData);
+    int Str2Hex(char * strSrc, unsigned char* hexData);
+
+    string Aes_pass;
 };
 
 #endif // AES_ECB_H
