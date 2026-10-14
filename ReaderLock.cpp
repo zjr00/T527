@@ -11,7 +11,21 @@
 #include "config.h"
 #define MAX_CMDBUFF_LEN 128
 
+/*功能：蓝牙阅读器------》锁*/
+
 ReaderLock::ReaderLock()
+{
+
+}
+
+ReaderLock::~ReaderLock()
+{
+    // 销毁互斥锁和条件变量
+    pthread_mutex_destroy(&mutex);
+    pthread_cond_destroy(&cond);
+}
+
+int ReaderLock::ReaderInit()
 {
     server_fd =-1;
     m_RecvLen = 0;
@@ -23,15 +37,10 @@ ReaderLock::ReaderLock()
     m_nHaveReq = false;
 
     IP = Config::Get("Reader","ReaderIP");
-    //IP = "192.168.30.198";
     Port = atoi(Config::Get("Reader","ReaderPort").c_str());
-}
-
-ReaderLock::~ReaderLock()
-{
-    // 销毁互斥锁和条件变量
-    pthread_mutex_destroy(&mutex);
-    pthread_cond_destroy(&cond);
+    
+    hdd_protocol.Hdd_Init();
+    return 0;
 }
 
 void ReaderLock::TCPRecvThread()
@@ -65,7 +74,7 @@ void ReaderLock::TCPRecvThread()
                     
                     memcpy(onePack, m_recvData, m_RecvLen);
                     cmdType = *(onePack + 19);
-                    strcpy(m_retInfo,"0x01");
+                    //strcpy(m_retInfo,"0x01");
                     if (cmdType == 0x00)
                     {
                         printf("找不到目标终端\n");
@@ -157,13 +166,13 @@ void ReaderLock::NetRecvOnePack(unsigned char *onePack, int packLen)
     switch (cmdType)
     {
     case 0x00:
-        strcpy(m_retInfo,"0x00");
+        m_retInfo = 0x00;
+        //strcpy(m_retInfo,"0x00");
         break;
     case 0x01:
-        strcpy(m_retInfo,"0x01");
-        break;
     case 0x02:
-        strcpy(m_retInfo,"0x01");
+        m_retInfo = 0x01;
+        //strcpy(m_retInfo,"0x01");
         break;
     default:
         break;
@@ -194,7 +203,7 @@ int ReaderLock::TCPConnect()
     {
         printf("connet ReaderLock  err\n");
         close_sock();
-        return 0;
+        return -1;
     }
     else
     {
@@ -225,9 +234,9 @@ void ReaderLock::TCPSend(const char *data, int len)
 }
 
 // 施封
-char* ReaderLock::NetSealLock(const char * lockNum)
+char ReaderLock::NetSealLock(const char * lockNum)
 {
-    memset(m_retInfo, 0, sizeof(m_retInfo));
+    //memset(m_retInfo, 0, sizeof(m_retInfo));
     unsigned char cmd[MAX_CMDBUFF_LEN] = {0};
     unsigned char aesData[64] = {0};
     int len =hdd_protocol.getSealLock(cmd, lockNum);                           
@@ -243,9 +252,9 @@ char* ReaderLock::NetSealLock(const char * lockNum)
     m_nHaveReq = true;
     if (wait_for_response(7000)) {
        
-        printf("施封结果: %s\n",m_retInfo);
+        printf("母锁施封结果: %d\n",m_retInfo);
     } else {
-        printf("Timeout! No data received.\n");
+        LOGE("Timeout! No data received.\n");
     }
     m_RecvLen = 0;   
     m_nHaveReq = false;
@@ -254,7 +263,7 @@ char* ReaderLock::NetSealLock(const char * lockNum)
 }
 
 // 解封
-char* ReaderLock::NetUnSealLock(const char * lockNum)
+char ReaderLock::NetUnSealLock(const char * lockNum)
 {
     unsigned char cmd[MAX_CMDBUFF_LEN] = {0};
     int len =hdd_protocol.getUnSealLock(cmd, lockNum);
@@ -268,7 +277,7 @@ char* ReaderLock::NetUnSealLock(const char * lockNum)
     m_nHaveReq = true;
     if (wait_for_response(7000)) {
        
-        LOGI("解封结果: %s\n",m_retInfo);
+        LOGI("母锁解封结果: %d\n",m_retInfo);
     } else {
         LOGE("Timeout! No data received.\n");
     }
@@ -279,7 +288,7 @@ char* ReaderLock::NetUnSealLock(const char * lockNum)
 }
 
 //L -666 施封
-char *ReaderLock::NetL666_SealLock(const char *lockNum)
+char ReaderLock::NetL666_SealLock(const char *lockNum)
 {
     unsigned char cmd[MAX_CMDBUFF_LEN];
     memset(cmd, 0, MAX_CMDBUFF_LEN);
@@ -294,7 +303,7 @@ char *ReaderLock::NetL666_SealLock(const char *lockNum)
     m_nHaveReq = true;
     if (wait_for_response(7000)) {
        
-        LOGI("施封封结果: %s\n",m_retInfo);
+        LOGI("子锁施封结果: %d\n",m_retInfo);
     } else {
         LOGE("Timeout! No data received.\n");
     }
@@ -305,7 +314,7 @@ char *ReaderLock::NetL666_SealLock(const char *lockNum)
 }
 
 // L -666解封
-char *ReaderLock::NetL666_UnSealLock(const char *lockNum)
+char ReaderLock::NetL666_UnSealLock(const char *lockNum)
 {
     unsigned char cmd[MAX_CMDBUFF_LEN] = {0};
     int len = hdd_protocol.L666_getUnSealLock(cmd, lockNum);
@@ -317,7 +326,7 @@ char *ReaderLock::NetL666_UnSealLock(const char *lockNum)
     m_nHaveReq = true;
     if (wait_for_response(7000)) {
        
-        LOGI("解封结果: %s\n",m_retInfo);
+        LOGI("子锁解封结果: %d\n",m_retInfo);
     } else {
         LOGE("Timeout! No data received.\n");
     }
